@@ -1,0 +1,19 @@
+[package]
+name = "raycaster_game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[profile.dev]
+opt-level = 2 # Use better optimizations.
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+
+
+[dependencies]
+rayon = "1.7.0"
+winit = "0.28.3"
+softbuffer = "0.2.0"
+image = "0.24.6"
