@@ -171,9 +171,12 @@ fn main() {
     #[allow(unused_assignments)]
     let mut movespeed = 0.05;
     let mut screen_pitch = 0.0;
-    let  pos_z = 0.0;
+    let mut pos_z = 0.0;
     let mut sprite_order = [0; NUM_SPRITES];
     let mut sprite_dist = [0.0; NUM_SPRITES];
+    let mut is_jumping = false;
+    let mut vertical_velocity = 0.0;
+    let mut last_update = std::time::Instant::now();
     
     rayon::ThreadPoolBuilder::new().num_threads(12).build_global().unwrap();
     
@@ -211,11 +214,11 @@ fn main() {
                     };
                 
                     // Vertical position of the camera.
-                    let pos_z = 0.5 * (RENDER_SCREEN_HEIGHT as f64);
+                    let cam_z = if is_floor { 0.5 * RENDER_SCREEN_HEIGHT as f64 + pos_z.clone()} else { 0.5 * RENDER_SCREEN_HEIGHT as f64 - pos_z.clone()};
                 
                     // Horizontal distance from the camera to the floor for the current row.
                     // 0.5 is the z position exactly in the middle between floor and ceiling.
-                    let row_distance = pos_z / (p as f64);
+                    let row_distance = cam_z / (p as f64);
                 
                     let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (RENDER_SCREEN_WIDTH as f64);
                     let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (RENDER_SCREEN_WIDTH as f64);
@@ -305,11 +308,11 @@ fn main() {
                 
                     let line_height = RENDER_SCREEN_HEIGHT as f64 / perp_wall_dist;
                 
-                    let mut draw_start = -line_height as i32 / 2 + RENDER_SCREEN_HEIGHT as i32 / 2 + screen_pitch as i32;
+                    let mut draw_start = -line_height as i32 / 2 + RENDER_SCREEN_HEIGHT as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
                     if draw_start < 0 {
                         draw_start = 0;
                     };
-                    let mut draw_end = line_height as i32 / 2 + RENDER_SCREEN_HEIGHT as i32 / 2 + screen_pitch as i32;
+                    let mut draw_end = line_height as i32 / 2 + RENDER_SCREEN_HEIGHT as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
                     if draw_end >= RENDER_SCREEN_HEIGHT as i32 {
                         draw_end = RENDER_SCREEN_HEIGHT as i32 - 1;
                     };
@@ -334,7 +337,7 @@ fn main() {
                     }
                 
                     let step = 1.0 * (TEX_HEIGHT as f64) / line_height;
-                    let mut tex_pos = ((draw_start as f64) - screen_pitch - (RENDER_SCREEN_HEIGHT as f64) / 2.0 + line_height / 2.0) * step;
+                    let mut tex_pos = ((draw_start as f64) - screen_pitch - (pos_z.clone() / perp_wall_dist) - (RENDER_SCREEN_HEIGHT as f64) / 2.0 + line_height / 2.0) * step;
                 
                     let mut col_buffer: [u32; RENDER_SCREEN_HEIGHT as usize] = [0; RENDER_SCREEN_HEIGHT as usize];
                 
@@ -464,6 +467,22 @@ fn main() {
                     window.set_cursor_visible(false);
                     init = 4;
                 }
+                if is_jumping {
+                let now = std::time::Instant::now();
+                let delta_time = (now - last_update).as_secs_f64() * 3.0;
+                last_update = now;
+                pos_z += vertical_velocity * delta_time;
+                vertical_velocity -= 50.0 * delta_time;
+                if pos_z >= 200.0 {
+                    pos_z = 200.0;
+                    vertical_velocity = -300.0;
+                } else if pos_z <= 0.0 {
+                    pos_z = 0.0;
+                    is_jumping = false;
+                    vertical_velocity = 0.0;
+                }
+                }
+
                 window.request_redraw()
             }
             Event::WindowEvent {
@@ -539,6 +558,16 @@ fn main() {
                         if WORLD_MAP[(pos_x + plane_x * movespeed) as usize][(pos_y) as usize] == 0 {pos_x += plane_x * movespeed};
                         if WORLD_MAP[(pos_x) as usize][(pos_y + plane_y * movespeed) as usize] == 0 {pos_y += plane_y * movespeed};
                     },
+                    VirtualKeyCode::LControl => {
+                        pos_z = -200.0
+                    },
+                    VirtualKeyCode::Space => {
+                        if !is_jumping {
+                            is_jumping = true;
+                            vertical_velocity = 300.0;
+                        }
+                    },
+                    
                     
                     _ => continue
                 }
