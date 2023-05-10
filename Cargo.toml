@@ -17,3 +17,8 @@ rayon = "1.7.0"
 winit = "0.28.3"
 softbuffer = "0.2.0"
 image = "0.24.6"
+
+tracing = "0.1.37"
+tracing-subscriber = {version = "0.3.17", features = ["json", "local-time"]}
+profiling = {version = "1.0.8", features = ["profile-with-tracy"]}
+tracing-tracy = "0.10"
