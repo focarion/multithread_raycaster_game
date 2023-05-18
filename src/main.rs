@@ -76,7 +76,7 @@ const  WORLD_MAP: [[usize; MAP_WIDTH]; MAP_HEIGHT] =
 
 fn main() {
     tracy_client::Client::start();
-    profiling::register_thread!("Main Thread");
+    // profiling::register_thread!("Main Thread");
     use tracing_subscriber::layer::SubscriberExt;
         tracing::subscriber::set_global_default(
             tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
@@ -168,6 +168,7 @@ fn main() {
     rayon::ThreadPoolBuilder::new().num_threads(12).build_global().unwrap();
     
     let mut pressed_keys = HashSet::new();
+    profiling::scope!("Main Loop");
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let current_frame_time = std::time::Instant::now();
@@ -178,162 +179,122 @@ fn main() {
         movespeed = (frame_time_ms as f64 / 1000.0) * 3.5;   
         match event {
             Event::RedrawRequested(window_id) if window_id == window.id() => {
-                frames += 1;
-                if last_fps_print_time.elapsed() > Duration::from_secs(1) {
-                    println!("FPS: {:.1}", frames as f64 / last_fps_print_time.elapsed().as_secs_f64());
-                    last_fps_print_time = std::time::Instant::now();
-                    frames = 0;
-                }
-                let half_screen_height = RENDER_SCREEN_HEIGHT as f64 / 2.0;
-                let ray_dir_x0 = dir_x - plane_x;
-                let ray_dir_y0 = dir_y - plane_y;
-                let ray_dir_x1 = dir_x + plane_x;
-                let ray_dir_y1 = dir_y + plane_y;
-                let ceiling_floor_buffer = ceiling_buffer(screen_pitch, half_screen_height, pos_z, ray_dir_x1, ray_dir_x0, ray_dir_y1, ray_dir_y0, pos_x, pos_y, texture);
-                // let ceiling_floor_buffer: Vec<Vec<u32>> = (0..RENDER_SCREEN_HEIGHT).into_par_iter().map(|y| {
-                //     let is_floor = y as isize > RENDER_SCREEN_HEIGHT as isize / 2 + screen_pitch as isize;
-                    
-                    
-                //     let ray_dir_x0 = dir_x - plane_x;
-                //     let ray_dir_y0 = dir_y - plane_y;
-                //     let ray_dir_x1 = dir_x + plane_x;
-                //     let ray_dir_y1 = dir_y + plane_y;
-                
-                //     // Current y position compared to the center of the screen (the horizon)
-                //     let p  = if is_floor {
-                //         (y as isize) - (RENDER_SCREEN_HEIGHT as isize) / 2 - screen_pitch as isize
-                //     } else {
-                //         RENDER_SCREEN_HEIGHT as isize / 2 - y as isize + screen_pitch as isize
-                //     };
-                
-                //     // Vertical position of the camera.
-                //     let cam_z = if is_floor { 0.5 * RENDER_SCREEN_HEIGHT as f64 + pos_z.clone()} else { 0.5 * RENDER_SCREEN_HEIGHT as f64 - pos_z.clone()};
-                
-                //     // Horizontal distance from the camera to the floor for the current row.
-                //     // 0.5 is the z position exactly in the middle between floor and ceiling.
-                //     let row_distance = cam_z / (p as f64);
-                
-                //     let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (RENDER_SCREEN_WIDTH as f64);
-                //     let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (RENDER_SCREEN_WIDTH as f64);
-                
-                //     let mut floor_x = pos_x + row_distance * ray_dir_x0;
-                //     let mut floor_y = pos_y + row_distance * ray_dir_y0;
-                
-                
-                //     let mut row_buffer: [u32; RENDER_SCREEN_WIDTH as usize] = [0; RENDER_SCREEN_WIDTH as usize];
-                
-                //     for x in 0..RENDER_SCREEN_WIDTH {
-                //         let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
-                //         let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
-                
-                //         floor_x += floor_step_x;
-                //         floor_y += floor_step_y;
-                
-                //         let floor_texture = 7;
-                //         let ceiling_texture = 1;
-                //         if is_floor {
-                //             // floor
-                //             let color = texture[floor_texture][(TEX_WIDTH as isize * ty + tx) as usize];
-                //             row_buffer[x as usize] = color;
-                //         } else {
-                //             //ceiling
-                //             let color = texture[ceiling_texture][(TEX_WIDTH as isize * ty + tx) as usize];
-                //             row_buffer[x as usize] = color;
-                //         }
-                //     }
-                //     row_buffer.to_vec()
-                // }).collect();
-                let (wall_buffer, z_buffer) = wall_buffer(dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture);
-                
-               let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
-
-                let transposed_wall_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_wall_buffer
-                .iter_mut()
-                .map(|row| AtomicPtr::new(row.as_mut_ptr()))
-                .collect();
-
-                (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
-                    let row_ptr = transposed_wall_buffer_atomic[y as usize].load(Order::Relaxed);
-            
-                    let mut x = 0;
-                    while x < RENDER_SCREEN_WIDTH {
-                        unsafe {
-                            ptr::write(row_ptr.add(x), *wall_buffer[x as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 1), *wall_buffer[(x + 1) as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 2), *wall_buffer[(x + 2) as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 3), *wall_buffer[(x + 3) as usize].get_unchecked(y));
-                        }
-                        x += 4;
+                profiling::scope!("Redraw");
+                {
+                    frames += 1;
+                    if last_fps_print_time.elapsed() > Duration::from_secs(1) {
+                        println!("FPS: {:.1}", frames as f64 / last_fps_print_time.elapsed().as_secs_f64());
+                        last_fps_print_time = std::time::Instant::now();
+                        frames = 0;
                     }
-                });
-                let sprite_data: Vec<(usize, f64)> = (0..NUM_SPRITES).into_par_iter().map(|index| {
-                    let order = index;
-                    let dist = (pos_x - SPRITE[index].x) * (pos_x - SPRITE[index].x) + (pos_y - SPRITE[index].y) * (pos_y - SPRITE[index].y);
-                    (order, dist)
-                }).collect();
+                    let half_screen_height = RENDER_SCREEN_HEIGHT as f64 / 2.0;
+                    let ray_dir_x0 = dir_x - plane_x;
+                    let ray_dir_y0 = dir_y - plane_y;
+                    let ray_dir_x1 = dir_x + plane_x;
+                    let ray_dir_y1 = dir_y + plane_y;
+                    let ceiling_floor_buffer = ceiling_buffer(screen_pitch, half_screen_height, pos_z, ray_dir_x1, ray_dir_x0, ray_dir_y1, ray_dir_y0, pos_x, pos_y, texture);
 
-                let mut sprite_data = sprite_data;
-                sprite_data.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                    let (wall_buffer, z_buffer) = wall_buffer(dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture);
+                    
+                let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
 
-                let sprite_order: Vec<usize> = sprite_data.into_iter().map(|(order, _)| order).collect();
+                    let transposed_wall_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_wall_buffer
+                    .iter_mut()
+                    .map(|row| AtomicPtr::new(row.as_mut_ptr()))
+                    .collect();
 
-                let sprite_buffer = sprite_buffer(sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture);
-
-                let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
-
-                let transposed_sprite_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_sprite_buffer
-                .iter_mut()
-                .map(|row| AtomicPtr::new(row.as_mut_ptr()))
-                .collect();
-
-                (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
-                    let row_ptr = transposed_sprite_buffer_atomic[y as usize].load(Order::Relaxed);
-            
-                    let mut x = 0;
-                    while x < RENDER_SCREEN_WIDTH {
-                        unsafe {
-                            ptr::write(row_ptr.add(x), *sprite_buffer[x as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 1), *sprite_buffer[(x + 1) as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 2), *sprite_buffer[(x + 2) as usize].get_unchecked(y));
-                            ptr::write(row_ptr.add(x + 3), *sprite_buffer[(x + 3) as usize].get_unchecked(y));
+                    (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
+                        let row_ptr = transposed_wall_buffer_atomic[y as usize].load(Order::Relaxed);
+                
+                        let mut x = 0;
+                        while x < RENDER_SCREEN_WIDTH {
+                            unsafe {
+                                ptr::write(row_ptr.add(x), *wall_buffer[x as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 1), *wall_buffer[(x + 1) as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 2), *wall_buffer[(x + 2) as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 3), *wall_buffer[(x + 3) as usize].get_unchecked(y));
+                            }
+                            x += 4;
                         }
-                        x += 4;
+                    });
+                    let sprite_data: Vec<(usize, f64)> = (0..NUM_SPRITES).into_par_iter().map(|index| {
+                        let order = index;
+                        let dist = (pos_x - SPRITE[index].x) * (pos_x - SPRITE[index].x) + (pos_y - SPRITE[index].y) * (pos_y - SPRITE[index].y);
+                        (order, dist)
+                    }).collect();
+
+                    let mut sprite_data = sprite_data;
+                    sprite_data.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+                    let sprite_order: Vec<usize> = sprite_data.into_iter().map(|(order, _)| order).collect();
+
+                    let sprite_buffer = sprite_buffer(sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture);
+
+                    let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
+
+                    let transposed_sprite_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_sprite_buffer
+                    .iter_mut()
+                    .map(|row| AtomicPtr::new(row.as_mut_ptr()))
+                    .collect();
+
+                    (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
+                        let row_ptr = transposed_sprite_buffer_atomic[y as usize].load(Order::Relaxed);
+                
+                        let mut x = 0;
+                        while x < RENDER_SCREEN_WIDTH {
+                            unsafe {
+                                ptr::write(row_ptr.add(x), *sprite_buffer[x as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 1), *sprite_buffer[(x + 1) as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 2), *sprite_buffer[(x + 2) as usize].get_unchecked(y));
+                                ptr::write(row_ptr.add(x + 3), *sprite_buffer[(x + 3) as usize].get_unchecked(y));
+                            }
+                            x += 4;
+                        }
+                    });
+                    //info!("Finish Transpose Sprite Buffer");
+
+
+
+                    let final_buffer = create_final_buffer(transposed_wall_buffer, ceiling_floor_buffer, transposed_sprite_buffer);
+                    profiling::scope!("Draw Frame");
+                    {
+                        profiling::scope!("Draw to Winit Frame");
+                        {
+                            
+                            let buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
+                            
+                            //info!("Finish Assemblying final buffer");
+                            graphics_context.set_buffer(&buffer, RENDER_SCREEN_WIDTH as u16, RENDER_SCREEN_HEIGHT as u16);
+                            
+                            //info!("Set Buffer");
+                        }
+                        if init < 3 {
+                            init += 1
+                        } else if init == 3 {
+                            window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
+                            window.set_cursor_visible(false);
+                            init = 4;
+                            // *control_flow = ControlFlow::Exit
+                        }
+                        if is_jumping {
+                        let now = std::time::Instant::now();
+                        let delta_time = (now - last_update).as_secs_f64() * 3.0;
+                        last_update = now;
+                        pos_z += vertical_velocity * delta_time;
+                        vertical_velocity -= 50.0 * delta_time;
+                        if pos_z >= 200.0 {
+                            pos_z = 200.0;
+                            vertical_velocity = -300.0;
+                        } else if pos_z <= 0.0 {
+                            pos_z = 0.0;
+                            is_jumping = false;
+                            vertical_velocity = 0.0;
+                        }
+                        }
+                        profiling::finish_frame!();
+                        window.request_redraw()
                     }
-                });
-                //info!("Finish Transpose Sprite Buffer");
-
-
-
-                let final_buffer = create_final_buffer(transposed_wall_buffer, ceiling_floor_buffer, transposed_sprite_buffer);
-                let buffer: Vec<u32> = final_buffer.iter().flatten().cloned().collect();
-                //info!("Finish Assemblying final buffer");
-                graphics_context.set_buffer(&buffer, RENDER_SCREEN_WIDTH as u16, RENDER_SCREEN_HEIGHT as u16);
-                //info!("Set Buffer");
-                if init < 3 {
-                    init += 1
-                } else if init == 3 {
-                    window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
-                    window.set_cursor_visible(false);
-                    init = 4;
-                    // *control_flow = ControlFlow::Exit
                 }
-                if is_jumping {
-                let now = std::time::Instant::now();
-                let delta_time = (now - last_update).as_secs_f64() * 3.0;
-                last_update = now;
-                pos_z += vertical_velocity * delta_time;
-                vertical_velocity -= 50.0 * delta_time;
-                if pos_z >= 200.0 {
-                    pos_z = 200.0;
-                    vertical_velocity = -300.0;
-                } else if pos_z <= 0.0 {
-                    pos_z = 0.0;
-                    is_jumping = false;
-                    vertical_velocity = 0.0;
-                }
-                }
-
-                window.request_redraw()
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -424,9 +385,8 @@ fn main() {
             }
     });
 }
-
+#[profiling::function]
 fn create_final_buffer(transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buffer: Vec<Vec<u32>>, transposed_sprite_buffer: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
-    //info!("Start Assemblying final buffer");
     let wall_floor_cel: Vec<Vec<u32>> = transposed_wall_buffer
         .into_par_iter()
         .zip(ceiling_floor_buffer)
@@ -461,7 +421,7 @@ fn create_final_buffer(transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buff
         .collect();
     final_buffer
 }
-
+#[profiling::function]
 fn sprite_buffer(sprite_order: Vec<usize>, pos_x: f64, pos_y: f64, plane_x: f64, dir_y: f64, dir_x: f64, plane_y: f64, screen_pitch: f64, pos_z: f64, z_buffer: Vec<f64>, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
     let sprite_buffer: Vec<Vec<u32>> = (0..RENDER_SCREEN_WIDTH).into_par_iter().map(|x| {
         let mut column_buffer = vec![0; RENDER_SCREEN_HEIGHT];
@@ -522,7 +482,7 @@ fn sprite_buffer(sprite_order: Vec<usize>, pos_x: f64, pos_y: f64, plane_x: f64,
     }).collect();
     sprite_buffer
 }
-
+#[profiling::function]
 fn wall_buffer(dir_x: f64, plane_x: f64, dir_y: f64, plane_y: f64, pos_x: f64, pos_y: f64, screen_pitch: f64, pos_z: f64, texture: [[u32; 4096]; 11]) -> (Vec<Vec<u32>>, Vec<f64>) {
     let (wall_buffer, z_buffer): (Vec<Vec<u32>>, Vec<f64>) = (0..RENDER_SCREEN_WIDTH).into_par_iter().map(|x| {
         let camera_x: f64 = 2.0 * x as f64 / RENDER_SCREEN_WIDTH as f64 - 1.0;
@@ -630,8 +590,8 @@ fn wall_buffer(dir_x: f64, plane_x: f64, dir_y: f64, plane_y: f64, pos_x: f64, p
         (col_buffer.to_vec(), perp_wall_dist)
     }).collect();
     (wall_buffer, z_buffer)
-}
-
+}    
+#[profiling::function]
 fn ceiling_buffer(screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_dir_x1: f64, ray_dir_x0: f64, ray_dir_y1: f64, ray_dir_y0: f64, pos_x: f64, pos_y: f64, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
     let ceiling_floor_buffer: Vec<Vec<u32>> = (0..RENDER_SCREEN_HEIGHT).into_par_iter().map(|y| {
         let is_floor = y as isize > RENDER_SCREEN_HEIGHT as isize / 2 + screen_pitch as isize;
@@ -640,7 +600,7 @@ fn ceiling_buffer(screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_di
         } else {
             RENDER_SCREEN_HEIGHT as isize / 2 - y as isize + screen_pitch as isize
         };
-        let cam_z = if is_floor { half_screen_height + pos_z.clone() } else { half_screen_height - pos_z.clone()};
+        let cam_z = if is_floor { half_screen_height + pos_z } else { half_screen_height - pos_z};
         let row_distance = cam_z / (p as f64);
         let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (RENDER_SCREEN_WIDTH as f64);
         let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (RENDER_SCREEN_WIDTH as f64);
