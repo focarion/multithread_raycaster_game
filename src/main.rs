@@ -1,6 +1,6 @@
 use profiling::tracy_client;
 use rayon::prelude::*;
-use std::{time::Duration, collections::HashSet, sync::atomic::{AtomicPtr, Ordering as Order}, ptr};
+use std::{time::Duration, collections::HashSet, ptr};
 use softbuffer::GraphicsContext;
 use winit::{
     event::{Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode /*, ModifiersState*/, ElementState},
@@ -196,27 +196,29 @@ fn main() {
 
                     let (wall_buffer, z_buffer) = wall_buffer(dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture);
                     
-                let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
+                    let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
 
-                    let transposed_wall_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_wall_buffer
-                    .iter_mut()
-                    .map(|row| AtomicPtr::new(row.as_mut_ptr()))
-                    .collect();
-
-                    (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
-                        let row_ptr = transposed_wall_buffer_atomic[y as usize].load(Order::Relaxed);
-                
-                        let mut x = 0;
-                        while x < RENDER_SCREEN_WIDTH {
-                            unsafe {
-                                ptr::write(row_ptr.add(x), *wall_buffer[x as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 1), *wall_buffer[(x + 1) as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 2), *wall_buffer[(x + 2) as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 3), *wall_buffer[(x + 3) as usize].get_unchecked(y));
+                    profiling::scope!("Transpose Wall");
+                    {
+                        transposed_wall_buffer
+                        .par_iter_mut()
+                        .enumerate()
+                        .for_each(|(y, row)| {
+                            let row_ptr = row.as_mut_ptr();
+                            
+                            let mut x = 0;
+                            while x < RENDER_SCREEN_WIDTH {
+                                unsafe {
+                                    ptr::write(row_ptr.add(x), *wall_buffer[x as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 1), *wall_buffer[(x + 1) as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 2), *wall_buffer[(x + 2) as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 3), *wall_buffer[(x + 3) as usize].get_unchecked(y));
+                                }
+                                x += 4;
                             }
-                            x += 4;
-                        }
-                    });
+                        });
+                    }
+
                     let sprite_data: Vec<(usize, f64)> = (0..NUM_SPRITES).into_par_iter().map(|index| {
                         let order = index;
                         let dist = (pos_x - SPRITE[index].x) * (pos_x - SPRITE[index].x) + (pos_y - SPRITE[index].y) * (pos_y - SPRITE[index].y);
@@ -232,26 +234,27 @@ fn main() {
 
                     let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; RENDER_SCREEN_WIDTH]; RENDER_SCREEN_HEIGHT];
 
-                    let transposed_sprite_buffer_atomic: Vec<AtomicPtr<u32>> = transposed_sprite_buffer
-                    .iter_mut()
-                    .map(|row| AtomicPtr::new(row.as_mut_ptr()))
-                    .collect();
-
-                    (0..RENDER_SCREEN_HEIGHT).into_par_iter().for_each(|y| {
-                        let row_ptr = transposed_sprite_buffer_atomic[y as usize].load(Order::Relaxed);
-                
-                        let mut x = 0;
-                        while x < RENDER_SCREEN_WIDTH {
-                            unsafe {
-                                ptr::write(row_ptr.add(x), *sprite_buffer[x as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 1), *sprite_buffer[(x + 1) as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 2), *sprite_buffer[(x + 2) as usize].get_unchecked(y));
-                                ptr::write(row_ptr.add(x + 3), *sprite_buffer[(x + 3) as usize].get_unchecked(y));
+                    profiling::scope!("Transpose Sprite");
+                    {
+                        transposed_sprite_buffer
+                        .par_iter_mut()
+                        .enumerate()
+                        .for_each(|(y, row)| {
+                            let row_ptr = row.as_mut_ptr();
+                            
+                            let mut x = 0;
+                            while x < RENDER_SCREEN_WIDTH {
+                                unsafe {
+                                    ptr::write(row_ptr.add(x), *sprite_buffer[x as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 1), *sprite_buffer[(x + 1) as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 2), *sprite_buffer[(x + 2) as usize].get_unchecked(y));
+                                    ptr::write(row_ptr.add(x + 3), *sprite_buffer[(x + 3) as usize].get_unchecked(y));
+                                }
+                                x += 4;
                             }
-                            x += 4;
-                        }
-                    });
-                    //info!("Finish Transpose Sprite Buffer");
+                        });
+                        //info!("Finish Transpose Sprite Buffer");
+                    }
 
 
 
@@ -264,8 +267,10 @@ fn main() {
                             let buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
                             
                             //info!("Finish Assemblying final buffer");
-                            graphics_context.set_buffer(&buffer, RENDER_SCREEN_WIDTH as u16, RENDER_SCREEN_HEIGHT as u16);
-                            
+                            profiling::scope!("Set Buffer");
+                            {
+                                graphics_context.set_buffer(&buffer, RENDER_SCREEN_WIDTH as u16, RENDER_SCREEN_HEIGHT as u16);
+                            }
                             //info!("Set Buffer");
                         }
                         if init < 3 {
@@ -606,20 +611,21 @@ fn ceiling_buffer(screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_di
         let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (RENDER_SCREEN_WIDTH as f64);
         let mut floor_x = pos_x + row_distance * ray_dir_x0;
         let mut floor_y = pos_y + row_distance * ray_dir_y0;
-
-        (0..RENDER_SCREEN_WIDTH).map(|_x| {
+        let mut x_buffer: Vec<u32> = Vec::with_capacity(RENDER_SCREEN_WIDTH);
+        (0..RENDER_SCREEN_WIDTH).for_each(|_| {
             let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
             let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
             floor_x += floor_step_x;
             floor_y += floor_step_y;
             if is_floor {
                 // floor
-                texture[7][(TEX_WIDTH as isize * ty + tx) as usize]
+                x_buffer.push(texture[7][(TEX_WIDTH as isize * ty + tx) as usize]);
             } else {
                 //ceiling
-                texture[1][(TEX_WIDTH as isize * ty + tx) as usize]
+                x_buffer.push(texture[1][(TEX_WIDTH as isize * ty + tx) as usize]);
             }
-        }).collect()
+        });
+        x_buffer
     }).collect();
     ceiling_floor_buffer
 }

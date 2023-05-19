@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rayon::prelude::*;
-struct Sprite {
+/* struct Sprite {
     x: f64,
     y: f64,
     texture: usize
@@ -28,7 +28,7 @@ const SPRITE: [Sprite; NUM_SPRITES] = [
     Sprite {x: 9.5, y: 15.5, texture: 8},
     Sprite {x: 10.0, y: 15.1, texture: 8},
     Sprite {x: 10.5, y: 15.8, texture: 8},
-    ];
+    ]; */
 const RENDER_SCREEN_HEIGHT: usize = 1080;
 const RENDER_SCREEN_WIDTH: usize = 1920;
 
@@ -77,20 +77,21 @@ fn ceiling_buffer(screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_di
         let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (RENDER_SCREEN_WIDTH as f64);
         let mut floor_x = pos_x + row_distance * ray_dir_x0;
         let mut floor_y = pos_y + row_distance * ray_dir_y0;
-
-        (0..RENDER_SCREEN_WIDTH).map(|_x| {
+        let mut x_buffer: Vec<u32> = Vec::with_capacity(RENDER_SCREEN_WIDTH);
+        (0..RENDER_SCREEN_WIDTH).for_each(|_| {
             let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
             let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
             floor_x += floor_step_x;
             floor_y += floor_step_y;
             if is_floor {
                 // floor
-                texture[7][(TEX_WIDTH as isize * ty + tx) as usize]
+                x_buffer.push(texture[7][(TEX_WIDTH as isize * ty + tx) as usize]);
             } else {
                 //ceiling
-                texture[1][(TEX_WIDTH as isize * ty + tx) as usize]
+                x_buffer.push(texture[1][(TEX_WIDTH as isize * ty + tx) as usize]);
             }
-        }).collect()
+        });
+        x_buffer
     }).collect();
     ceiling_floor_buffer
 }
