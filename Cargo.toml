@@ -3,6 +3,7 @@ name = "multithread_raycaster_game"
 version = "0.1.1"
 edition = "2021"
 
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.dev]
 opt-level = 2 # Use better optimizations.
@@ -10,7 +11,16 @@ debug = true
 debug-assertions = true
 overflow-checks = true
 incremental = true
-features = ["debug"]
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 1
 
 [features]
 debug = ["profiling", "tracing", "tracing-subscriber", "tracing-tracy"]
@@ -22,14 +32,16 @@ winit = "0.28"
 softbuffer = "0.2"
 image = "0.24"
 
-tracing = {version = "0.1", optional = true}
-tracing-subscriber = {version = "0.3", features = ["json", "local-time"], optional = true}
-profiling = {version = "1.0", features = ["profile-with-tracy"], optional = true}
-tracing-tracy = {version = "0.10", optional = true}
 
 
 [dev-dependencies]
 criterion = "0.4"
+
+[target.'cfg(debug_assertions)'.dependencies]
+tracing = {version = "0.1", optional = true}
+tracing-subscriber = {version = "0.3", features = ["json", "local-time"], optional = true}
+profiling = {version = "1.0", features = ["profile-with-tracy"], optional = true}
+tracing-tracy = {version = "0.10", optional = true}
 
 [[bench]]
 name = "raycasting_benchmarks"
