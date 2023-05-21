@@ -1,5 +1,5 @@
-#[cfg(debug_assertions)]
-use profiling::tracy_client;
+#[cfg(feature = "debug")]
+use profiling::{tracy_client, scope};
 
 use rayon::prelude::*;
 use std::{time::Duration, collections::HashSet, ptr};
@@ -231,16 +231,17 @@ fn main() {
             panic!("Failed to read line: {}", error);
         }
     }
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "debug")]
     {
     tracy_client::Client::start();
-    }
+    
     // profiling::register_thread!("Main Thread");
     use tracing_subscriber::layer::SubscriberExt;
         tracing::subscriber::set_global_default(
             tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
         )
-        .unwrap();  
+        .unwrap(); 
+    } 
     let event_loop = EventLoop::new();
     let display_size = PhysicalSize::new(render_screen_width as u32, render_screen_height as u32);
     let window = WindowBuilder::new().with_inner_size(display_size).with_resizable(true).build(&event_loop).unwrap();
@@ -328,7 +329,8 @@ fn main() {
     // rayon::ThreadPoolBuilder::new().num_threads(12).build_global().unwrap();
     
     let mut pressed_keys = HashSet::new();
-    profiling::scope!("Main Loop");
+    #[cfg(feature = "debug")]
+    scope!("Main Loop");
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         let current_frame_time = std::time::Instant::now();
@@ -339,6 +341,7 @@ fn main() {
         movespeed = (frame_time_ms as f64 / 1000.0) * 3.5;   
         match event {
             Event::RedrawRequested(window_id) if window_id == window.id() => {
+                #[cfg(feature = "debug")]
                 profiling::scope!("Redraw");
                 {
                     frames += 1;
@@ -357,7 +360,7 @@ fn main() {
                     let (wall_buffer, z_buffer) = wall_buffer(render_screen_width, render_screen_height, dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture);
                     
                     let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; render_screen_width]; render_screen_height];
-
+                    #[cfg(feature = "debug")]
                     profiling::scope!("Transpose Wall");
                     {
                         transposed_wall_buffer
@@ -393,7 +396,7 @@ fn main() {
                     let sprite_buffer = sprite_buffer(render_screen_width, render_screen_height, sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture);
 
                     let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; render_screen_width]; render_screen_height];
-
+                    #[cfg(feature = "debug")]
                     profiling::scope!("Transpose Sprite");
                     {
                         transposed_sprite_buffer
@@ -419,14 +422,17 @@ fn main() {
 
 
                     let final_buffer = create_final_buffer(transposed_wall_buffer, ceiling_floor_buffer, transposed_sprite_buffer);
+                    #[cfg(feature = "debug")]
                     profiling::scope!("Draw Frame");
                     {
+                        #[cfg(feature = "debug")]
                         profiling::scope!("Draw to Winit Frame");
                         {
                             
                             let buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
                             
                             //info!("Finish Assemblying final buffer");
+                            #[cfg(feature = "debug")]
                             profiling::scope!("Set Buffer");
                             {
                                 graphics_context.set_buffer(&buffer, render_screen_width as u16, render_screen_height as u16);
@@ -456,6 +462,7 @@ fn main() {
                             vertical_velocity = 0.0;
                         }
                         }
+                        #[cfg(feature = "debug")]
                         profiling::finish_frame!();
                         window.request_redraw()
                     }
@@ -550,241 +557,255 @@ fn main() {
             }
     });
 }
-#[profiling::function]
+
+
 fn create_final_buffer(transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buffer: Vec<Vec<u32>>, transposed_sprite_buffer: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
-    let wall_floor_cel: Vec<Vec<u32>> = transposed_wall_buffer
-        .into_par_iter()
-        .zip(ceiling_floor_buffer)
-        .map(|(wall_vec, floor_ceiling_vec)| {
-            let mut draw_buffer: Vec<u32> = Vec::with_capacity(wall_vec.len());
-            draw_buffer.extend_from_slice(&wall_vec);
+    #[cfg(feature = "debug")]
+    profiling::scope!("Final Buffer");
+    {
+        let wall_floor_cel: Vec<Vec<u32>> = transposed_wall_buffer
+            .into_par_iter()
+            .zip(ceiling_floor_buffer)
+            .map(|(wall_vec, floor_ceiling_vec)| {
+                let mut draw_buffer: Vec<u32> = Vec::with_capacity(wall_vec.len());
+                draw_buffer.extend_from_slice(&wall_vec);
 
-            for (i, (value_wall, value_floor)) in wall_vec.iter().zip(floor_ceiling_vec).enumerate() {
-                if *value_wall == 0 {
-                    draw_buffer[i] = value_floor;
+                for (i, (value_wall, value_floor)) in wall_vec.iter().zip(floor_ceiling_vec).enumerate() {
+                    if *value_wall == 0 {
+                        draw_buffer[i] = value_floor;
+                    }
                 }
-            }
 
-            draw_buffer
-        })
-        .collect();
-    let final_buffer: Vec<Vec<u32>> = transposed_sprite_buffer
-        .into_par_iter()
-        .zip(wall_floor_cel)
-        .map(|(sprite_vec, wall_floor_vec)| {
-            let mut draw_buffer: Vec<u32> = Vec::with_capacity(sprite_vec.len());
-            draw_buffer.extend_from_slice(&sprite_vec);
+                draw_buffer
+            })
+            .collect();
+        let final_buffer: Vec<Vec<u32>> = transposed_sprite_buffer
+            .into_par_iter()
+            .zip(wall_floor_cel)
+            .map(|(sprite_vec, wall_floor_vec)| {
+                let mut draw_buffer: Vec<u32> = Vec::with_capacity(sprite_vec.len());
+                draw_buffer.extend_from_slice(&sprite_vec);
 
-            for (i, (value_floor, value_wall)) in sprite_vec.iter().zip(wall_floor_vec).enumerate() {
-                if *value_floor == 0 {
-                    draw_buffer[i] = value_wall;
+                for (i, (value_floor, value_wall)) in sprite_vec.iter().zip(wall_floor_vec).enumerate() {
+                    if *value_floor == 0 {
+                        draw_buffer[i] = value_wall;
+                    }
                 }
-            }
 
-            draw_buffer
-        })
-        .collect();
-    final_buffer
+                draw_buffer
+            })
+            .collect();
+        final_buffer
+    }
 }
-#[profiling::function]
 fn sprite_buffer(render_screen_width: usize, render_screen_height: usize, sprite_order: Vec<usize>, pos_x: f64, pos_y: f64, plane_x: f64, dir_y: f64, dir_x: f64, plane_y: f64, screen_pitch: f64, pos_z: f64, z_buffer: Vec<f64>, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
-    let sprite_buffer: Vec<Vec<u32>> = (0..render_screen_width).into_par_iter().map(|x| {
-        let mut column_buffer = vec![0; render_screen_height];
+    #[cfg(feature = "debug")]
+    profiling::scope!("Sprite Buffer");
+    {
+        let sprite_buffer: Vec<Vec<u32>> = (0..render_screen_width).into_par_iter().map(|x| {
+            let mut column_buffer = vec![0; render_screen_height];
 
-        for index in 0..NUM_SPRITES {
-            let sprite_x = SPRITE[sprite_order[index]].x - pos_x;
-            let sprite_y = SPRITE[sprite_order[index]].y - pos_y;
+            for index in 0..NUM_SPRITES {
+                let sprite_x = SPRITE[sprite_order[index]].x - pos_x;
+                let sprite_y = SPRITE[sprite_order[index]].y - pos_y;
 
-            let inv_det = 1.0 / (plane_x * dir_y - dir_x * plane_y);
+                let inv_det = 1.0 / (plane_x * dir_y - dir_x * plane_y);
 
-            let transform_x = inv_det * (dir_y * sprite_x - dir_x * sprite_y);
-            let transform_y = inv_det * (-plane_y * sprite_x + plane_x * sprite_y);
+                let transform_x = inv_det * (dir_y * sprite_x - dir_x * sprite_y);
+                let transform_y = inv_det * (-plane_y * sprite_x + plane_x * sprite_y);
 
-            let sprite_screen_x = ((render_screen_width / 2) as f64 * (1.0 + transform_x / transform_y)) as isize;
+                let sprite_screen_x = ((render_screen_width / 2) as f64 * (1.0 + transform_x / transform_y)) as isize;
 
-            const U_DIV: isize = 1;
-            const V_DIV: isize = 1;
-            const V_MOVE: f64 = 0.0;
-            let v_move_screen = ((V_MOVE / transform_y) + screen_pitch + pos_z / transform_y) as isize;
+                const U_DIV: isize = 1;
+                const V_DIV: isize = 1;
+                const V_MOVE: f64 = 0.0;
+                let v_move_screen = ((V_MOVE / transform_y) + screen_pitch + pos_z / transform_y) as isize;
 
-            let sprite_height = ((render_screen_height as f64 / (transform_y)).abs()) as isize / V_DIV;
-            let mut draw_start_y = -sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
-            if draw_start_y < 0 {
-                draw_start_y = 0
-            };
-            let mut draw_end_y = sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
-            if draw_end_y >= render_screen_height as isize {
-                draw_end_y = render_screen_height as isize - 1
-            };
+                let sprite_height = ((render_screen_height as f64 / (transform_y)).abs()) as isize / V_DIV;
+                let mut draw_start_y = -sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
+                if draw_start_y < 0 {
+                    draw_start_y = 0
+                };
+                let mut draw_end_y = sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
+                if draw_end_y >= render_screen_height as isize {
+                    draw_end_y = render_screen_height as isize - 1
+                };
 
-            let sprite_width = ((render_screen_height as f64 / (transform_y)).abs()) as isize / U_DIV;
-            let mut draw_start_x = -sprite_width / 2 + sprite_screen_x;
-            if draw_start_x < 0 {
-                draw_start_x = 0
-            };
-            let mut draw_end_x = sprite_width / 2 + sprite_screen_x;
-            if draw_end_x > render_screen_width as isize {
-                draw_end_x = render_screen_width as isize
-            };
+                let sprite_width = ((render_screen_height as f64 / (transform_y)).abs()) as isize / U_DIV;
+                let mut draw_start_x = -sprite_width / 2 + sprite_screen_x;
+                if draw_start_x < 0 {
+                    draw_start_x = 0
+                };
+                let mut draw_end_x = sprite_width / 2 + sprite_screen_x;
+                if draw_end_x > render_screen_width as isize {
+                    draw_end_x = render_screen_width as isize
+                };
 
-            if x as isize >= draw_start_x && (x as isize) < draw_end_x {
-                let stripe = x as isize;
-                let tex_x = (256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * TEX_WIDTH as isize / sprite_width) / 256;
-                if transform_y > 0.0 && transform_y < z_buffer[stripe as usize] {
-                    for y in draw_start_y..draw_end_y {
-                        let d = (y - v_move_screen) * 256 - render_screen_height as isize * 128 + sprite_height * 128;
-                        let tex_y = ((d * TEX_HEIGHT as isize) / sprite_height) / 256;
-                        let color = texture[SPRITE[sprite_order[index]].texture][(TEX_WIDTH as isize * tex_y + tex_x) as usize];
-                        if (color & 0x00FFFFFF) != 0 {
-                            column_buffer[y as usize] = color;
+                if x as isize >= draw_start_x && (x as isize) < draw_end_x {
+                    let stripe = x as isize;
+                    let tex_x = (256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * TEX_WIDTH as isize / sprite_width) / 256;
+                    if transform_y > 0.0 && transform_y < z_buffer[stripe as usize] {
+                        for y in draw_start_y..draw_end_y {
+                            let d = (y - v_move_screen) * 256 - render_screen_height as isize * 128 + sprite_height * 128;
+                            let tex_y = ((d * TEX_HEIGHT as isize) / sprite_height) / 256;
+                            let color = texture[SPRITE[sprite_order[index]].texture][(TEX_WIDTH as isize * tex_y + tex_x) as usize];
+                            if (color & 0x00FFFFFF) != 0 {
+                                column_buffer[y as usize] = color;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        column_buffer
-    }).collect();
-    sprite_buffer
+            column_buffer
+        }).collect();
+        sprite_buffer
+    }
 }
-#[profiling::function]
 fn wall_buffer(render_screen_width: usize, render_screen_height: usize, dir_x: f64, plane_x: f64, dir_y: f64, plane_y: f64, pos_x: f64, pos_y: f64, screen_pitch: f64, pos_z: f64, texture: [[u32; 4096]; 11]) -> (Vec<Vec<u32>>, Vec<f64>) {
-    let (wall_buffer, z_buffer): (Vec<Vec<u32>>, Vec<f64>) = (0..render_screen_width).into_par_iter().map(|x| {
-        let camera_x: f64 = 2.0 * x as f64 / render_screen_width as f64 - 1.0;
-        let ray_dir_x: f64 = dir_x + plane_x * camera_x;
-        let ray_dir_y: f64 = dir_y + plane_y * camera_x;
+    #[cfg(feature = "debug")]
+    profiling::scope!("Wall Buffer");
+    {
+        let (wall_buffer, z_buffer): (Vec<Vec<u32>>, Vec<f64>) = (0..render_screen_width).into_par_iter().map(|x| {
+            let camera_x: f64 = 2.0 * x as f64 / render_screen_width as f64 - 1.0;
+            let ray_dir_x: f64 = dir_x + plane_x * camera_x;
+            let ray_dir_y: f64 = dir_y + plane_y * camera_x;
 
-        let (mut map_x, mut map_y) = (pos_x as isize, pos_y as isize);
+            let (mut map_x, mut map_y) = (pos_x as isize, pos_y as isize);
 
-        let (mut side_dist_x, mut side_dist_y): (f64, f64);
+            let (mut side_dist_x, mut side_dist_y): (f64, f64);
 
-        let delta_dist_x = (1.0 / ray_dir_x).abs();
-        let delta_dist_y = (1.0 / ray_dir_y).abs();
+            let delta_dist_x = (1.0 / ray_dir_x).abs();
+            let delta_dist_y = (1.0 / ray_dir_y).abs();
 
-        let perp_wall_dist: f64;
+            let perp_wall_dist: f64;
 
-        let (step_x, step_y): (isize, isize);
+            let (step_x, step_y): (isize, isize);
 
-        let mut wall_hit: bool = false;
+            let mut wall_hit: bool = false;
 
-        let mut side_wall: bool = false;
+            let mut side_wall: bool = false;
 
-        if ray_dir_x < 0.0 {
-            step_x = -1;
-            side_dist_x = (pos_x - map_x as f64) * delta_dist_x;
-        } else {
-            step_x = 1;
-            side_dist_x = (map_x as f64 + 1.0 - pos_x) * delta_dist_x;
-        }
-        if ray_dir_y < 0.0 {
-            step_y = -1;
-            side_dist_y = (pos_y - map_y as f64) * delta_dist_y;
-        } else {
-            step_y = 1;
-            side_dist_y = (map_y as f64 + 1.0 - pos_y) * delta_dist_y;
-        }
-
-        while !wall_hit {
-            if side_dist_x < side_dist_y {
-                side_dist_x += delta_dist_x;
-                map_x += step_x;
-                side_wall = false;
+            if ray_dir_x < 0.0 {
+                step_x = -1;
+                side_dist_x = (pos_x - map_x as f64) * delta_dist_x;
             } else {
-                side_dist_y += delta_dist_y;
-                map_y += step_y;
-                side_wall = true;
+                step_x = 1;
+                side_dist_x = (map_x as f64 + 1.0 - pos_x) * delta_dist_x;
             }
-            if WORLD_MAP[map_x as usize][map_y as usize] > 0 {
-                wall_hit = true;
+            if ray_dir_y < 0.0 {
+                step_y = -1;
+                side_dist_y = (pos_y - map_y as f64) * delta_dist_y;
+            } else {
+                step_y = 1;
+                side_dist_y = (map_y as f64 + 1.0 - pos_y) * delta_dist_y;
             }
-        }
-        if !side_wall {
-            perp_wall_dist = side_dist_x - delta_dist_x;
-        } else {
-            perp_wall_dist = side_dist_y - delta_dist_y;
-        };
 
-        let line_height = render_screen_height as f64 / perp_wall_dist;
-
-        let mut draw_start = -line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
-        if draw_start < 0 {
-            draw_start = 0;
-        };
-        let mut draw_end = line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
-        if draw_end >= render_screen_height as i32 {
-            draw_end = render_screen_height as i32 - 1;
-        };
-
-        let tex_num = WORLD_MAP[map_x as usize][map_y as usize] - 1;
-
-        let mut wall_x: f64;
-        if side_wall == false {
-            wall_x = pos_y + perp_wall_dist * ray_dir_y;
-        } else {
-            wall_x = pos_x + perp_wall_dist * ray_dir_x;
-        }
-        wall_x -= wall_x.floor();
-
-        let mut tex_x = (wall_x * (TEX_WIDTH) as f64) as isize;
-        if side_wall == false && ray_dir_x > 0.0 {
-    
-            tex_x = (TEX_WIDTH as isize) - tex_x - 1;
-        }
-        if side_wall == true && ray_dir_y < 0.0 {
-            tex_x = (TEX_WIDTH as isize) - tex_x - 1;
-        }
-
-        let step = 1.0 * (TEX_HEIGHT as f64) / line_height;
-        let mut tex_pos = ((draw_start as f64) - screen_pitch - (pos_z.clone() / perp_wall_dist) - (render_screen_height as f64) / 2.0 + line_height / 2.0) * step;
-
-        let mut col_buffer: Vec<u32> = vec![0; render_screen_height];
-        for position_y in (draw_start as u32)..(draw_end as u32) {
-            let tex_y = (tex_pos as isize) & ((TEX_HEIGHT as isize) - 1);
-            tex_pos += step;
-            let color = texture[tex_num as usize][((TEX_HEIGHT as isize) * tex_y + tex_x) as usize];
-            if side_wall == true {
-                /*let temp_color = Color::from_u32(&PixelFormat::try_from(PixelFormatEnum::RGBA8888).unwrap(), color);
-                            let (r, g, b, a) = temp_color.rgba();
-                            color = Color::to_u32(Color::RGBA(r / 2, g / 2, b /2, a), &PixelFormat::try_from(PixelFormatEnum::RGBA8888).unwrap());
-                            */
-            
+            while !wall_hit {
+                if side_dist_x < side_dist_y {
+                    side_dist_x += delta_dist_x;
+                    map_x += step_x;
+                    side_wall = false;
+                } else {
+                    side_dist_y += delta_dist_y;
+                    map_y += step_y;
+                    side_wall = true;
+                }
+                if WORLD_MAP[map_x as usize][map_y as usize] > 0 {
+                    wall_hit = true;
+                }
             }
-            col_buffer[position_y as usize] = color;
-        }
-        (col_buffer.to_vec(), perp_wall_dist)
-    }).collect();
-    (wall_buffer, z_buffer)
+            if !side_wall {
+                perp_wall_dist = side_dist_x - delta_dist_x;
+            } else {
+                perp_wall_dist = side_dist_y - delta_dist_y;
+            };
+
+            let line_height = render_screen_height as f64 / perp_wall_dist;
+
+            let mut draw_start = -line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+            if draw_start < 0 {
+                draw_start = 0;
+            };
+            let mut draw_end = line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+            if draw_end >= render_screen_height as i32 {
+                draw_end = render_screen_height as i32 - 1;
+            };
+
+            let tex_num = WORLD_MAP[map_x as usize][map_y as usize] - 1;
+
+            let mut wall_x: f64;
+            if side_wall == false {
+                wall_x = pos_y + perp_wall_dist * ray_dir_y;
+            } else {
+                wall_x = pos_x + perp_wall_dist * ray_dir_x;
+            }
+            wall_x -= wall_x.floor();
+
+            let mut tex_x = (wall_x * (TEX_WIDTH) as f64) as isize;
+            if side_wall == false && ray_dir_x > 0.0 {
+        
+                tex_x = (TEX_WIDTH as isize) - tex_x - 1;
+            }
+            if side_wall == true && ray_dir_y < 0.0 {
+                tex_x = (TEX_WIDTH as isize) - tex_x - 1;
+            }
+
+            let step = 1.0 * (TEX_HEIGHT as f64) / line_height;
+            let mut tex_pos = ((draw_start as f64) - screen_pitch - (pos_z.clone() / perp_wall_dist) - (render_screen_height as f64) / 2.0 + line_height / 2.0) * step;
+
+            let mut col_buffer: Vec<u32> = vec![0; render_screen_height];
+            for position_y in (draw_start as u32)..(draw_end as u32) {
+                let tex_y = (tex_pos as isize) & ((TEX_HEIGHT as isize) - 1);
+                tex_pos += step;
+                let color = texture[tex_num as usize][((TEX_HEIGHT as isize) * tex_y + tex_x) as usize];
+                if side_wall == true {
+                    /*let temp_color = Color::from_u32(&PixelFormat::try_from(PixelFormatEnum::RGBA8888).unwrap(), color);
+                                let (r, g, b, a) = temp_color.rgba();
+                                color = Color::to_u32(Color::RGBA(r / 2, g / 2, b /2, a), &PixelFormat::try_from(PixelFormatEnum::RGBA8888).unwrap());
+                                */
+                
+                }
+                col_buffer[position_y as usize] = color;
+            }
+            (col_buffer.to_vec(), perp_wall_dist)
+        }).collect();
+        (wall_buffer, z_buffer)
+    }
 }    
-#[profiling::function]
 fn ceiling_buffer(render_screen_width: usize, render_screen_height: usize, screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_dir_x1: f64, ray_dir_x0: f64, ray_dir_y1: f64, ray_dir_y0: f64, pos_x: f64, pos_y: f64, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
-    let ceiling_floor_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
-        let is_floor = y as isize > render_screen_height as isize / 2 + screen_pitch as isize;
-        let p  = if is_floor {
-            (y as isize) - (render_screen_height as isize) / 2 - screen_pitch as isize
-        } else {
-            render_screen_height as isize / 2 - y as isize + screen_pitch as isize
-        };
-        let cam_z = if is_floor { half_screen_height + pos_z } else { half_screen_height - pos_z};
-        let row_distance = cam_z / (p as f64);
-        let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (render_screen_width as f64);
-        let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (render_screen_width as f64);
-        let mut floor_x = pos_x + row_distance * ray_dir_x0;
-        let mut floor_y = pos_y + row_distance * ray_dir_y0;
-        let mut x_buffer: Vec<u32> = Vec::with_capacity(render_screen_width);
-        (0..render_screen_width).for_each(|_| {
-            let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
-            let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
-            floor_x += floor_step_x;
-            floor_y += floor_step_y;
-            if is_floor {
-                // floor
-                x_buffer.push(texture[7][(TEX_WIDTH as isize * ty + tx) as usize]);
+    #[cfg(feature = "debug")]
+    profiling::scope!("Ceiling Buffer");
+    {
+        let ceiling_floor_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
+            let is_floor = y as isize > render_screen_height as isize / 2 + screen_pitch as isize;
+            let p  = if is_floor {
+                (y as isize) - (render_screen_height as isize) / 2 - screen_pitch as isize
             } else {
-                //ceiling
-                x_buffer.push(texture[1][(TEX_WIDTH as isize * ty + tx) as usize]);
-            }
-        });
-        x_buffer
-    }).collect();
-    ceiling_floor_buffer
+                render_screen_height as isize / 2 - y as isize + screen_pitch as isize
+            };
+            let cam_z = if is_floor { half_screen_height + pos_z } else { half_screen_height - pos_z};
+            let row_distance = cam_z / (p as f64);
+            let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (render_screen_width as f64);
+            let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (render_screen_width as f64);
+            let mut floor_x = pos_x + row_distance * ray_dir_x0;
+            let mut floor_y = pos_y + row_distance * ray_dir_y0;
+            let mut x_buffer: Vec<u32> = Vec::with_capacity(render_screen_width);
+            (0..render_screen_width).for_each(|_| {
+                let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
+                let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
+                floor_x += floor_step_x;
+                floor_y += floor_step_y;
+                if is_floor {
+                    // floor
+                    x_buffer.push(texture[7][(TEX_WIDTH as isize * ty + tx) as usize]);
+                } else {
+                    //ceiling
+                    x_buffer.push(texture[1][(TEX_WIDTH as isize * ty + tx) as usize]);
+                }
+            });
+            x_buffer
+        }).collect();
+        ceiling_floor_buffer
+    }
 }
