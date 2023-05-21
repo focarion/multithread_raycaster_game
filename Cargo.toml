@@ -1,6 +1,6 @@
 [package]
-name = "raycaster_game"
-version = "0.1.0"
+name = "multithread_raycaster_game"
+version = "0.1.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -13,17 +13,18 @@ incremental = true
 
 
 [dependencies]
-rayon = "1.7.0"
-winit = "0.28.3"
-softbuffer = "0.2.0"
-image = "0.24.6"
-
-tracing = "0.1.37"
-tracing-subscriber = {version = "0.3.17", features = ["json", "local-time"]}
-profiling = {version = "1.0.8", features = ["profile-with-tracy"]}
+rayon = "1.7"
+winit = "0.28"
+softbuffer = "0.2"
+image = "0.24"
+tracing = "0.1"
+tracing-subscriber = {version = "0.3", features = ["json", "local-time"]}
+profiling = {version = "1.0", features = ["profile-with-tracy"]}
 tracing-tracy = "0.10"
+
 [dev-dependencies]
-criterion = "0.4.0"
+criterion = "0.4"
+
 [[bench]]
 name = "raycasting_benchmarks"
 harness = false

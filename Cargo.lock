@@ -839,6 +839,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "multithread_raycaster_game"
+version = "0.1.1"
+dependencies = [
+ "criterion",
+ "image",
+ "profiling",
+ "rayon",
+ "softbuffer",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-tracy",
+ "winit",
+]
+
+[[package]]
 name = "nanorand"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1240,21 +1255,6 @@ name = "raw-window-handle"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f851a03551ceefd30132e447f07f96cb7011d6b658374f3aed847333adb5559"
-
-[[package]]
-name = "raycaster_game"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "image",
- "profiling",
- "rayon",
- "softbuffer",
- "tracing",
- "tracing-subscriber",
- "tracing-tracy",
- "winit",
-]
 
 [[package]]
 name = "rayon"
@@ -2186,9 +2186,9 @@ checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
 
 [[package]]
 name = "winit"
-version = "0.28.3"
+version = "0.28.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f504e8c117b9015f618774f8d58cd4781f5a479bc41079c064f974cbb253874"
+checksum = "866db3f712fffba75d31bf0cdecf357c8aeafd158c5b7ab51dba2a2b2d47f196"
 dependencies = [
  "android-activity",
  "bitflags",
