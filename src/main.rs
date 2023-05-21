@@ -464,10 +464,12 @@ fn main() {
                         }
                         #[cfg(feature = "debug")]
                         profiling::finish_frame!();
-                        window.request_redraw()
                     }
                 }
             }
+            Event::MainEventsCleared {} =>{
+                window.request_redraw();
+            },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
