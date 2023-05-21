@@ -30,7 +30,7 @@ debug = ["profiling", "tracing", "tracing-subscriber", "tracing-tracy"]
 rayon = "1.7"
 winit = "0.28"
 softbuffer = "0.2"
-image = {version = "0.24", default-features = false}
+image = {version = "0.24",features = ["png"], default-features = false}
 
 
 
