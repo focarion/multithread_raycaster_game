@@ -332,7 +332,7 @@ fn main() {
     #[cfg(feature = "debug")]
     scope!("Main Loop");
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = ControlFlow::Poll;
         let current_frame_time = std::time::Instant::now();
         let frame_duration = current_frame_time.duration_since(previous_frame_time);
         previous_frame_time = current_frame_time;
