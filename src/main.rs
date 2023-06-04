@@ -1,6 +1,7 @@
 #[cfg(feature = "debug")]
 use profiling::{tracy_client, scope};
 
+/* use ab_glyph::{FontRef, Font, Glyph, point}; */
 use rayon::prelude::*;
 use std::{time::Duration, collections::HashSet, ptr};
 use softbuffer::GraphicsContext;
@@ -9,10 +10,10 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::{WindowBuilder, CursorGrabMode}, dpi::PhysicalSize,
 };
-use image::Pixel;
+use image::{Pixel/* , ImageBuffer, Rgba,  DynamicImage, imageops */};
 use std::io::{self, Write};
 use std::thread::available_parallelism;
-
+use packed_simd::{u32x8};
 struct Sprite {
     x: f64,
     y: f64,
@@ -82,8 +83,13 @@ const BARREL_BYTES: &'static [u8] = include_bytes!("../assets/textures/barrel.pn
 const LIGHT_BYTES: &'static [u8] = include_bytes!("../assets/textures/light.png");
 const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.png");
 fn main() {
+    let event_loop = EventLoop::new();
+    let monitor_resolution = event_loop.primary_monitor().unwrap().size();
+    let (monitor_width, monitor_height) = (monitor_resolution.width, monitor_resolution.height);
     let (mut render_screen_width, mut render_screen_height) = (1280, 720);
     let mut resolution_input = String::new();
+        
+    println!("{}x{} is your monitor current resolution", monitor_width, monitor_height);
     println!("Select the resolution:");
     println!("1 - 960x540");
     println!("2 - 1024x576");
@@ -95,6 +101,7 @@ fn main() {
     println!("8 - 3200x1800");
     println!("9 - 3840x2160");
     println!("Enter for default: 1280x720");
+
     io::stdout().flush().unwrap();
     match io::stdin().read_line(&mut resolution_input) {
         Ok(_) => {
@@ -151,6 +158,10 @@ fn main() {
         Err(error) => {
             panic!("Failed to read line: {}", error);
         }
+    }
+    {
+        let thread_amount = available_parallelism().unwrap().get();
+        println!("You have {} Threads Available", thread_amount);
     }
     let mut thread_amount = String::new();
     println!("I personally recommend 80% of the cpu threads up to 12");
@@ -242,7 +253,7 @@ fn main() {
         )
         .unwrap(); 
     } 
-    let event_loop = EventLoop::new();
+    // let font = FontRef::try_from_slice(include_bytes!("../assets/fonts/hud.otf")).unwrap();
     let display_size = PhysicalSize::new(render_screen_width as u32, render_screen_height as u32);
     let window = WindowBuilder::new().with_inner_size(display_size).with_resizable(true).build(&event_loop).unwrap();
     let mut graphics_context = unsafe { GraphicsContext::new(&window, &window) }.unwrap();
@@ -323,8 +334,11 @@ fn main() {
     let mut screen_pitch = 0.0;
     let mut pos_z = 0.0;
     let mut is_jumping = false;
+    let mut is_crouching = false;
+    let mut is_crouched = false;
     let mut vertical_velocity = 0.0;
     let mut last_update = std::time::Instant::now();
+    let mut movement_cooldown = std::time::Instant::now();
     
     // rayon::ThreadPoolBuilder::new().num_threads(12).build_global().unwrap();
     
@@ -367,17 +381,23 @@ fn main() {
                         .par_iter_mut()
                         .enumerate()
                         .for_each(|(y, row)| {
-                            let row_ptr = row.as_mut_ptr();
-                            
+                            let row_ptr = row.as_mut_ptr() as *mut u32x8;
                             let mut x = 0;
                             while x < render_screen_width {
                                 unsafe {
-                                    ptr::write(row_ptr.add(x), *wall_buffer[x as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 1), *wall_buffer[(x + 1) as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 2), *wall_buffer[(x + 2) as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 3), *wall_buffer[(x + 3) as usize].get_unchecked(y));
+                                    let data = u32x8::new(
+                                        *wall_buffer[x as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 1) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 2) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 3) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 4) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 5) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 6) as usize].get_unchecked(y),
+                                        *wall_buffer[(x + 7) as usize].get_unchecked(y),
+                                    );
+                                    ptr::write(row_ptr.add(x / 8), data);
                                 }
-                                x += 4;
+                                x += 8;
                             }
                         });
                     }
@@ -403,17 +423,23 @@ fn main() {
                         .par_iter_mut()
                         .enumerate()
                         .for_each(|(y, row)| {
-                            let row_ptr = row.as_mut_ptr();
-                            
+                            let row_ptr = row.as_mut_ptr() as *mut u32x8;
                             let mut x = 0;
                             while x < render_screen_width {
                                 unsafe {
-                                    ptr::write(row_ptr.add(x), *sprite_buffer[x as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 1), *sprite_buffer[(x + 1) as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 2), *sprite_buffer[(x + 2) as usize].get_unchecked(y));
-                                    ptr::write(row_ptr.add(x + 3), *sprite_buffer[(x + 3) as usize].get_unchecked(y));
+                                    let data = u32x8::new(
+                                        *sprite_buffer[x as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 1) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 2) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 3) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 4) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 5) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 6) as usize].get_unchecked(y),
+                                        *sprite_buffer[(x + 7) as usize].get_unchecked(y),
+                                    );
+                                    ptr::write(row_ptr.add(x / 8), data);
                                 }
-                                x += 4;
+                                x += 8;
                             }
                         });
                         //info!("Finish Transpose Sprite Buffer");
@@ -430,7 +456,43 @@ fn main() {
                         {
                             
                             let buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
-                            
+                            /* let img = ImageBuffer::from_fn(render_screen_width as u32, render_screen_height as u32, |x, y| {
+                                let pixel_value = buffer[(y * render_screen_width as u32 + x) as usize];
+                        
+                                // Unpack each byte of the u32 pixel value as a different color channel
+                                let r = ((pixel_value >> 24) & 0xff) as u8;
+                                let g = ((pixel_value >> 16) & 0xff) as u8;
+                                let b = ((pixel_value >> 8) & 0xff) as u8;
+                                let a = (pixel_value & 0xff) as u8;
+                        
+                                Rgba([r, g, b, a])
+                            }); */
+                            // let mut dyn_img = DynamicImage::ImageRgba8(img);
+                            /* let hud_buffer = vec![0x0000FFFFu32; render_screen_width * (render_screen_height / 5)]/* hud_buffer(render_screen_width, render_screen_height, font.clone()) */;
+                            let hud_img = ImageBuffer::from_fn(render_screen_width as u32, (render_screen_height / 5) as u32, |x, y| {
+                                let pixel_value = hud_buffer[(y * render_screen_width as u32 + x) as usize];
+                        
+                                // Unpack each byte of the u32 pixel value as a different color channel
+                                let r = (pixel_value >> 24) as u8;
+                                let g = (pixel_value >> 16) as u8;
+                                let b = (pixel_value >> 8) as u8;
+                                let a = pixel_value as u8;
+                        
+                                Rgba([r, g, b, a])
+                            });
+                            let dyn_hud_img = DynamicImage::ImageRgba8(hud_img);
+                            imageops::overlay(&mut dyn_img, &dyn_hud_img, 0, {
+                                ((render_screen_height << 2) / 5) as i64
+                            });
+                            let mut buffer: Vec<u32> = Vec::with_capacity(render_screen_height * render_screen_width);
+                            for (_, _, pixel) in dyn_img.as_rgba8().unwrap().enumerate_pixels() {
+                                let image::Rgba(data) = *pixel;
+                                let value = ((data[0] as u32) << 24) 
+                                          | ((data[1] as u32) << 16) 
+                                          | ((data[2] as u32) << 8) 
+                                          | (data[3] as u32);
+                                buffer.push(value);
+                            } */
                             //info!("Finish Assemblying final buffer");
                             #[cfg(feature = "debug")]
                             profiling::scope!("Set Buffer");
@@ -444,10 +506,11 @@ fn main() {
                         } else if init == 3 {
                             window.set_cursor_grab(CursorGrabMode::Confined).unwrap();
                             window.set_cursor_visible(false);
+                            mouse_lock = true;
                             init = 4;
                             // *control_flow = ControlFlow::Exit
                         }
-                        if is_jumping {
+                        if is_jumping && !is_crouching && !is_crouched {
                         let now = std::time::Instant::now();
                         let delta_time = (now - last_update).as_secs_f64() * 3.0;
                         last_update = now;
@@ -461,6 +524,32 @@ fn main() {
                             is_jumping = false;
                             vertical_velocity = 0.0;
                         }
+                        } else if !is_jumping && is_crouching {
+                            let now = std::time::Instant::now();
+                            let delta_time = (now - last_update).as_secs_f64() * 3.0;
+                            last_update = now;
+                            if !is_crouched {
+                                pos_z -= vertical_velocity * delta_time;
+                                if pos_z <= -200.0 {
+                                    pos_z = -200.0;
+                                    vertical_velocity = 0.0;
+                                    is_crouching = false;
+                                    is_crouched = true
+                                }
+                                
+                            } else {
+                                pos_z += vertical_velocity * delta_time;
+                                if pos_z >= 0.0 {
+                                    pos_z = 0.0;
+                                    vertical_velocity = 0.0;
+                                    is_crouching = false;
+                                    is_crouched = false
+                                }
+                                
+                            }
+                            
+
+
                         }
                         #[cfg(feature = "debug")]
                         profiling::finish_frame!();
@@ -488,16 +577,19 @@ fn main() {
                 },
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::MouseMotion { delta } => { 
-                    let x = delta.0;
-                    let old_dir_x = dir_x;
-                    dir_x = dir_x * (-x / 300.0).cos() - dir_y * (-x / 300.0).sin();
-                    dir_y = old_dir_x * (-x / 300.0).sin() + dir_y * (-x / 300.0).cos();
-                    let old_plane_x = plane_x;
-                    plane_x = plane_x * (-x / 300.0).cos() - plane_y * (-x / 300.0).sin();
-                    plane_y = old_plane_x * (-x / 300.0).sin() + plane_y * (-x / 300.0).cos();
-                    let y = delta.1;
-                    screen_pitch -= y;
-                    screen_pitch = f64::clamp(screen_pitch, -((render_screen_width as f64)*0.25), (render_screen_width as f64)*0.25);
+                    if mouse_lock {
+                        let x = delta.0;
+                        let old_dir_x = dir_x;
+                        dir_x = dir_x * (-x / 300.0).cos() - dir_y * (-x / 300.0).sin();
+                        dir_y = old_dir_x * (-x / 300.0).sin() + dir_y * (-x / 300.0).cos();
+                        let old_plane_x = plane_x;
+                        plane_x = plane_x * (-x / 300.0).cos() - plane_y * (-x / 300.0).sin();
+                        plane_y = old_plane_x * (-x / 300.0).sin() + plane_y * (-x / 300.0).cos();
+                        let y = delta.1;
+                        screen_pitch -= y;
+                        screen_pitch = f64::clamp(screen_pitch, -((render_screen_width as f64)*0.28), (render_screen_width as f64)*0.28);
+                    }
+                    
                     
                     },
                 _ => (),
@@ -544,12 +636,28 @@ fn main() {
                         if WORLD_MAP[(pos_x) as usize][(pos_y + plane_y * movespeed) as usize] == 0 {pos_y += plane_y * movespeed};
                     },
                     VirtualKeyCode::LControl => {
-                        pos_z = -200.0
+                        if !is_jumping {
+                            if movement_cooldown.elapsed() > Duration::from_millis(250) {
+                                if !is_crouching && !is_crouched {
+                                    is_crouching = true;
+                                    vertical_velocity = 250.0;
+                                } else if !is_crouching && is_crouched {
+                                    is_crouching = true;
+                                    vertical_velocity = 250.0
+                                }
+                                movement_cooldown = std::time::Instant::now();
+                            }
+                        }
                     },
                     VirtualKeyCode::Space => {
-                        if !is_jumping {
-                            is_jumping = true;
-                            vertical_velocity = 300.0;
+                        if !is_crouched {
+                            if movement_cooldown.elapsed() > Duration::from_millis(250) {
+                                if !is_jumping && !is_crouching {
+                                    is_jumping = true;
+                                    vertical_velocity = 300.0;
+                                }
+                                movement_cooldown = std::time::Instant::now();
+                            } 
                         }
                     },
                     
@@ -561,45 +669,30 @@ fn main() {
 }
 
 
-fn create_final_buffer(transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buffer: Vec<Vec<u32>>, transposed_sprite_buffer: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+
+fn create_final_buffer(mut transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buffer: Vec<Vec<u32>>, mut transposed_sprite_buffer: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Final Buffer");
     {
-        let wall_floor_cel: Vec<Vec<u32>> = transposed_wall_buffer
-            .into_par_iter()
-            .zip(ceiling_floor_buffer)
-            .map(|(wall_vec, floor_ceiling_vec)| {
-                let mut draw_buffer: Vec<u32> = Vec::with_capacity(wall_vec.len());
-                draw_buffer.extend_from_slice(&wall_vec);
-
-                for (i, (value_wall, value_floor)) in wall_vec.iter().zip(floor_ceiling_vec).enumerate() {
-                    if *value_wall == 0 {
-                        draw_buffer[i] = value_floor;
-                    }
+        transposed_wall_buffer.par_iter_mut().zip(ceiling_floor_buffer).for_each(|(wall_vec, floor_ceiling_vec)| {
+            for (value_wall, value_floor) in wall_vec.iter_mut().zip(floor_ceiling_vec) {
+                if *value_wall == 0 {
+                    *value_wall = value_floor;
                 }
-
-                draw_buffer
-            })
-            .collect();
-        let final_buffer: Vec<Vec<u32>> = transposed_sprite_buffer
-            .into_par_iter()
-            .zip(wall_floor_cel)
-            .map(|(sprite_vec, wall_floor_vec)| {
-                let mut draw_buffer: Vec<u32> = Vec::with_capacity(sprite_vec.len());
-                draw_buffer.extend_from_slice(&sprite_vec);
-
-                for (i, (value_floor, value_wall)) in sprite_vec.iter().zip(wall_floor_vec).enumerate() {
-                    if *value_floor == 0 {
-                        draw_buffer[i] = value_wall;
-                    }
+            }
+        });
+        transposed_sprite_buffer.par_iter_mut().zip(transposed_wall_buffer).for_each(|(sprite_vec, wall_floor_vec)| {
+            for (value_sprite, value_wall) in sprite_vec.iter_mut().zip(wall_floor_vec) {
+                if *value_sprite == 0 {
+                    *value_sprite = value_wall;
                 }
-
-                draw_buffer
-            })
-            .collect();
-        final_buffer
+            }
+        });
+        transposed_sprite_buffer
     }
 }
+
+
 fn sprite_buffer(render_screen_width: usize, render_screen_height: usize, sprite_order: Vec<usize>, pos_x: f64, pos_y: f64, plane_x: f64, dir_y: f64, dir_x: f64, plane_y: f64, screen_pitch: f64, pos_z: f64, z_buffer: Vec<f64>, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Sprite Buffer");
