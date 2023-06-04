@@ -22,5 +22,6 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           EXTRA_FILES: "README.md"
+          TOOLCHAIN_VERSION: "nightly"
 
   
