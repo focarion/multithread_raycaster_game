@@ -1,16 +1,15 @@
+use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
 #[cfg(feature = "debug")]
 use profiling::{tracy_client, scope};
 
-/* use ab_glyph::{FontRef, Font, Glyph, point}; */
 use rayon::prelude::*;
-use std::{time::Duration, collections::HashSet, ptr};
-use softbuffer::GraphicsContext;
+use std::{time::Duration, collections::HashSet, ptr, num::NonZeroU32};
 use winit::{
     event::{Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, ElementState},
     event_loop::{ControlFlow, EventLoop},
     window::{WindowBuilder, CursorGrabMode}, dpi::PhysicalSize,
 };
-use image::{Pixel/* , ImageBuffer, Rgba,  DynamicImage, imageops */};
+use image::{Pixel, GenericImageView};
 use std::io::{self, Write};
 use std::thread::available_parallelism;
 use packed_simd::{u32x8};
@@ -88,6 +87,7 @@ fn main() {
     let (monitor_width, monitor_height) = (monitor_resolution.width, monitor_resolution.height);
     let (mut render_screen_width, mut render_screen_height) = (1280, 720);
     let mut resolution_input = String::new();
+    let mut supersample_factor = 1;
         
     println!("{}x{} is your monitor current resolution", monitor_width, monitor_height);
     println!("Select the resolution:");
@@ -164,7 +164,8 @@ fn main() {
         println!("You have {} Threads Available", thread_amount);
     }
     let mut thread_amount = String::new();
-    println!("I personally recommend 80% of the cpu threads up to 12");
+    println!("Select the amount of Threads:");
+    println!("I personally recommend 80% of the cpu threads up to 12 (Sometimes more is better but the overhead makes it slower)");
     println!("1 - 1 Thread");
     println!("2 - 2 Threads");
     println!("3 - 4 Threads");
@@ -242,6 +243,47 @@ fn main() {
             panic!("Failed to read line: {}", error);
         }
     }
+    println!("Anti-Aliasing settings:");
+    println!("1 - No Anti-Aliasing");
+    println!("2 - 2x SSAA");
+    println!("3 - 4x SSAA");
+    println!("4 - 8x SSAA");
+    println!("5 - 16x SSAA (Masochist mode)");
+    println!("Enter For default: No Anti-Aliasing");
+    let mut aa_input = String::new();
+    match io::stdin().read_line(&mut aa_input) {
+        Ok(_) => {
+            match aa_input.trim().parse::<usize>(){
+                Ok(value) => {
+                    match value {
+                        1 => {
+                            supersample_factor = 1
+                        },
+                        2 => {
+                            supersample_factor = 2
+                        },
+                        3 => {
+                            supersample_factor = 4
+                        },
+                        4 => {
+                            supersample_factor = 8
+                        },
+                        5 => {
+                            supersample_factor = 16
+                        },
+                        _ => {
+                            supersample_factor = 1
+                        }
+                    }
+                }, Err(_) => {
+                    println!("Your input was invalid");
+                }
+            }
+        }
+        Err(error) => {
+            panic!("Failed to read line: {}", error);
+        }
+    }
     #[cfg(feature = "debug")]
     {
     tracy_client::Client::start();
@@ -252,11 +294,19 @@ fn main() {
             tracing_subscriber::registry().with(tracing_tracy::TracyLayer::new()),
         )
         .unwrap(); 
-    } 
-    // let font = FontRef::try_from_slice(include_bytes!("../assets/fonts/hud.otf")).unwrap();
+    }
+    let font = include_bytes!("../assets/fonts/hud.otf") as &[u8];
+    let game_text_font = fontdue::Font::from_bytes(font, fontdue::FontSettings::default()).unwrap();
     let display_size = PhysicalSize::new(render_screen_width as u32, render_screen_height as u32);
-    let window = WindowBuilder::new().with_inner_size(display_size).with_resizable(true).build(&event_loop).unwrap();
-    let mut graphics_context = unsafe { GraphicsContext::new(&window, &window) }.unwrap();
+    let window = WindowBuilder::new().with_title(format!("Multithread Raycaster Game Version: {}", clap::crate_version!())).with_inner_size(display_size).with_resizable(false).build(&event_loop).unwrap();
+    let graphics_context = unsafe { softbuffer::Context::new(&window) }.unwrap();
+    let mut surface = unsafe { softbuffer::Surface::new(&graphics_context, &window) }.unwrap();
+    surface
+        .resize(
+            NonZeroU32::new(render_screen_width as u32).unwrap(),
+            NonZeroU32::new(render_screen_height as u32).unwrap(),
+        )
+        .unwrap();
     let start_time = std::time::Instant::now();
     let mut frames = 0;
     let mut last_fps_print_time = start_time;
@@ -264,67 +314,102 @@ fn main() {
     
     let mut mouse_lock = false;
     let mut init = 0;
-    let mut texture: [[u32; (TEX_WIDTH * TEX_HEIGHT) as usize]; 11] = [[0; (TEX_WIDTH * TEX_HEIGHT) as usize]; 11];
+    let mut texture: Vec<Vec<u32>> = vec![vec![0; (TEX_WIDTH * TEX_HEIGHT) as usize]; 20];
     {
 
         let bricks_texture = image::load_from_memory(BRICK_WALLS_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in bricks_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[0][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-            texture[2][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-            texture[3][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = bricks_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[0] = buffer.clone();
+        texture[2] = buffer.clone();
+        texture[3] = buffer;
     }
     {
         let red_bricks_texture = image::load_from_memory(RED_BRICKS_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in red_bricks_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[4][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-            texture[5][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-            texture[6][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = red_bricks_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[4] = buffer.clone();
+        texture[5] = buffer.clone();
+        texture[6] = buffer;
     }
     {
         let red_flooring_texture = image::load_from_memory(RED_FLOORING_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in red_flooring_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[7][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = red_flooring_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[7] = buffer;
     }
     {
         let ceiling_texture = image::load_from_memory(CEILING_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in ceiling_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[1][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = ceiling_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[1] = buffer;
     }
     {
         let barrel_texture = image::load_from_memory(BARREL_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in barrel_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[8][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = barrel_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[8] = buffer;
     }
     {
         let pillar_texture = image::load_from_memory(PILLAR_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in pillar_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[9][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = pillar_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[9] = buffer;
     }
     {
         let light_texture = image::load_from_memory(LIGHT_BYTES).unwrap();
-        for (texture_x, texture_y, pixel) in light_texture.as_rgb8().unwrap().enumerate_pixels() {
-            let pixel_colors = pixel.channels();
-            let (r, g, b) = (pixel_colors[0] as u32, pixel_colors[1] as u32, pixel_colors[2] as u32);
-            texture[10][(TEX_WIDTH * texture_y + texture_x) as usize] = (r << 16) | (g << 8) | b;
-        }
+        let  buffer: Vec<u32> = light_texture.pixels()
+        .map(|(_, _, pixel)| {
+            let coverted_rgb = pixel.to_rgb();
+            let rgb = coverted_rgb.channels();
+            let color: u32;
+            color= ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | (rgb[2] as u32);
+            color
+        })
+        .collect();
+        texture[10] = buffer.clone();
     }
     let (mut pos_x, mut pos_y) = (22.0, 11.5); 
     let (mut dir_x, mut dir_y) = (-1.0, 0.0);
@@ -369,9 +454,10 @@ fn main() {
                     let ray_dir_y0 = dir_y - plane_y;
                     let ray_dir_x1 = dir_x + plane_x;
                     let ray_dir_y1 = dir_y + plane_y;
-                    let ceiling_floor_buffer = ceiling_buffer(render_screen_width, render_screen_height, screen_pitch, half_screen_height, pos_z, ray_dir_x1, ray_dir_x0, ray_dir_y1, ray_dir_y0, pos_x, pos_y, texture);
 
-                    let (wall_buffer, z_buffer) = wall_buffer(render_screen_width, render_screen_height, dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture);
+                    let ceiling_floor_buffer = ceiling_buffer(render_screen_width, render_screen_height, screen_pitch, half_screen_height, pos_z, ray_dir_x1, ray_dir_x0, ray_dir_y1, ray_dir_y0, pos_x, pos_y, texture.clone(), supersample_factor);
+
+                    let (wall_buffer, z_buffer) = wall_buffer(render_screen_width, render_screen_height, dir_x, plane_x, dir_y, plane_y, pos_x, pos_y, screen_pitch, pos_z, texture.clone(), supersample_factor);
                     
                     let mut transposed_wall_buffer: Vec<Vec<u32>> = vec![vec![0; render_screen_width]; render_screen_height];
                     #[cfg(feature = "debug")]
@@ -413,7 +499,7 @@ fn main() {
 
                     let sprite_order: Vec<usize> = sprite_data.into_iter().map(|(order, _)| order).collect();
 
-                    let sprite_buffer = sprite_buffer(render_screen_width, render_screen_height, sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture);
+                    let sprite_buffer = sprite_buffer(render_screen_width, render_screen_height, sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture.clone());
 
                     let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; render_screen_width]; render_screen_height];
                     #[cfg(feature = "debug")]
@@ -455,49 +541,20 @@ fn main() {
                         profiling::scope!("Draw to Winit Frame");
                         {
                             
-                            let buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
-                            /* let img = ImageBuffer::from_fn(render_screen_width as u32, render_screen_height as u32, |x, y| {
-                                let pixel_value = buffer[(y * render_screen_width as u32 + x) as usize];
-                        
-                                // Unpack each byte of the u32 pixel value as a different color channel
-                                let r = ((pixel_value >> 24) & 0xff) as u8;
-                                let g = ((pixel_value >> 16) & 0xff) as u8;
-                                let b = ((pixel_value >> 8) & 0xff) as u8;
-                                let a = (pixel_value & 0xff) as u8;
-                        
-                                Rgba([r, g, b, a])
-                            }); */
-                            // let mut dyn_img = DynamicImage::ImageRgba8(img);
-                            /* let hud_buffer = vec![0x0000FFFFu32; render_screen_width * (render_screen_height / 5)]/* hud_buffer(render_screen_width, render_screen_height, font.clone()) */;
-                            let hud_img = ImageBuffer::from_fn(render_screen_width as u32, (render_screen_height / 5) as u32, |x, y| {
-                                let pixel_value = hud_buffer[(y * render_screen_width as u32 + x) as usize];
-                        
-                                // Unpack each byte of the u32 pixel value as a different color channel
-                                let r = (pixel_value >> 24) as u8;
-                                let g = (pixel_value >> 16) as u8;
-                                let b = (pixel_value >> 8) as u8;
-                                let a = pixel_value as u8;
-                        
-                                Rgba([r, g, b, a])
-                            });
-                            let dyn_hud_img = DynamicImage::ImageRgba8(hud_img);
-                            imageops::overlay(&mut dyn_img, &dyn_hud_img, 0, {
-                                ((render_screen_height << 2) / 5) as i64
-                            });
-                            let mut buffer: Vec<u32> = Vec::with_capacity(render_screen_height * render_screen_width);
-                            for (_, _, pixel) in dyn_img.as_rgba8().unwrap().enumerate_pixels() {
-                                let image::Rgba(data) = *pixel;
-                                let value = ((data[0] as u32) << 24) 
-                                          | ((data[1] as u32) << 16) 
-                                          | ((data[2] as u32) << 8) 
-                                          | (data[3] as u32);
-                                buffer.push(value);
-                            } */
+                            let mut buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
+                            
+                            //render_text_to_buffer(255, 255, 255, "Text",10.0, game_text_font.clone(), 0.0, render_screen_height as f32 / 1.1,&mut buffer,  render_screen_width, render_screen_height, );
+                            //render_text_to_buffer(255, 0, 0, "Another Text",12.0, game_text_font.clone(), 0.0, render_screen_height as f32 / 1.8,&mut buffer,  render_screen_width, render_screen_height, );
                             //info!("Finish Assemblying final buffer");
                             #[cfg(feature = "debug")]
                             profiling::scope!("Set Buffer");
                             {
-                                graphics_context.set_buffer(&buffer, render_screen_width as u16, render_screen_height as u16);
+                                let mut draw_buffer = surface.buffer_mut().unwrap();
+                                {
+                                    draw_buffer.copy_from_slice(&buffer);
+                                }
+                                draw_buffer.present().unwrap();
+
                             }
                             //info!("Set Buffer");
                         }
@@ -579,12 +636,13 @@ fn main() {
                 DeviceEvent::MouseMotion { delta } => { 
                     if mouse_lock {
                         let x = delta.0;
+                        let sensitivity = render_screen_width as f64 / 5.0;
                         let old_dir_x = dir_x;
-                        dir_x = dir_x * (-x / 300.0).cos() - dir_y * (-x / 300.0).sin();
-                        dir_y = old_dir_x * (-x / 300.0).sin() + dir_y * (-x / 300.0).cos();
+                        dir_x = dir_x * (-x / sensitivity).cos() - dir_y * (-x / sensitivity).sin();
+                        dir_y = old_dir_x * (-x / sensitivity).sin() + dir_y * (-x / sensitivity).cos();
                         let old_plane_x = plane_x;
-                        plane_x = plane_x * (-x / 300.0).cos() - plane_y * (-x / 300.0).sin();
-                        plane_y = old_plane_x * (-x / 300.0).sin() + plane_y * (-x / 300.0).cos();
+                        plane_x = plane_x * (-x / sensitivity).cos() - plane_y * (-x / sensitivity).sin();
+                        plane_y = old_plane_x * (-x / sensitivity).sin() + plane_y * (-x / sensitivity).cos();
                         let y = delta.1;
                         screen_pitch -= y;
                         screen_pitch = f64::clamp(screen_pitch, -((render_screen_width as f64)*0.28), (render_screen_width as f64)*0.28);
@@ -670,7 +728,11 @@ fn main() {
 
 
 
-fn create_final_buffer(mut transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_buffer: Vec<Vec<u32>>, mut transposed_sprite_buffer: Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+fn create_final_buffer(
+    mut transposed_wall_buffer: Vec<Vec<u32>>,
+    ceiling_floor_buffer: Vec<Vec<u32>>,
+    mut transposed_sprite_buffer: Vec<Vec<u32>>
+) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Final Buffer");
     {
@@ -693,7 +755,21 @@ fn create_final_buffer(mut transposed_wall_buffer: Vec<Vec<u32>>, ceiling_floor_
 }
 
 
-fn sprite_buffer(render_screen_width: usize, render_screen_height: usize, sprite_order: Vec<usize>, pos_x: f64, pos_y: f64, plane_x: f64, dir_y: f64, dir_x: f64, plane_y: f64, screen_pitch: f64, pos_z: f64, z_buffer: Vec<f64>, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
+fn sprite_buffer(
+    render_screen_width: usize,
+    render_screen_height: usize,
+    sprite_order: Vec<usize>,
+    pos_x: f64,
+    pos_y: f64,
+    plane_x: f64,
+    dir_y: f64,
+    dir_x: f64,
+    plane_y: f64,
+    screen_pitch: f64,
+    pos_z: f64,
+    z_buffer: Vec<f64>,
+    texture: Vec<Vec<u32>>
+) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Sprite Buffer");
     {
@@ -757,12 +833,28 @@ fn sprite_buffer(render_screen_width: usize, render_screen_height: usize, sprite
         sprite_buffer
     }
 }
-fn wall_buffer(render_screen_width: usize, render_screen_height: usize, dir_x: f64, plane_x: f64, dir_y: f64, plane_y: f64, pos_x: f64, pos_y: f64, screen_pitch: f64, pos_z: f64, texture: [[u32; 4096]; 11]) -> (Vec<Vec<u32>>, Vec<f64>) {
+fn wall_buffer(
+    render_screen_width: usize,
+    render_screen_height: usize,
+    dir_x: f64,
+    plane_x: f64,
+    dir_y: f64,
+    plane_y: f64,
+    pos_x: f64,
+    pos_y: f64,
+    screen_pitch: f64,
+    pos_z: f64,
+    texture: Vec<Vec<u32>>,
+    supersample_factor: usize
+) -> (Vec<Vec<u32>>, Vec<f64>) {
     #[cfg(feature = "debug")]
     profiling::scope!("Wall Buffer");
     {
-        let (wall_buffer, z_buffer): (Vec<Vec<u32>>, Vec<f64>) = (0..render_screen_width).into_par_iter().map(|x| {
-            let camera_x: f64 = 2.0 * x as f64 / render_screen_width as f64 - 1.0;
+        let screen_pitch = screen_pitch * supersample_factor as f64;
+        let render_screen_width_ss = render_screen_width * supersample_factor;
+        let render_screen_height_ss = render_screen_height * supersample_factor;
+        let (wall_buffer, z_buffer): (Vec<Vec<u32>>, Vec<f64>) = (0..render_screen_width_ss).into_par_iter().map(|x| {
+            let camera_x: f64 = 2.0 * x as f64 / (render_screen_width_ss as f64) - 1.0;
             let ray_dir_x: f64 = dir_x + plane_x * camera_x;
             let ray_dir_y: f64 = dir_y + plane_y * camera_x;
 
@@ -811,20 +903,22 @@ fn wall_buffer(render_screen_width: usize, render_screen_height: usize, dir_x: f
                 }
             }
             if !side_wall {
-                perp_wall_dist = side_dist_x - delta_dist_x;
+                perp_wall_dist = (map_x as f64 - pos_x + (1.0 - step_x as f64) / 2.0) / ray_dir_x;
             } else {
-                perp_wall_dist = side_dist_y - delta_dist_y;
+                perp_wall_dist = (map_y as f64 - pos_y + (1.0 - step_y as f64) / 2.0) / ray_dir_y;
             };
+            
 
-            let line_height = render_screen_height as f64 / perp_wall_dist;
+            let line_height = (render_screen_height_ss as f64 / perp_wall_dist).abs();
 
-            let mut draw_start = -line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+
+            let mut draw_start = -line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
             if draw_start < 0 {
                 draw_start = 0;
             };
-            let mut draw_end = line_height as i32 / 2 + render_screen_height as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
-            if draw_end >= render_screen_height as i32 {
-                draw_end = render_screen_height as i32 - 1;
+            let mut draw_end = line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+            if draw_end >= (render_screen_height_ss) as i32 {
+                draw_end = (render_screen_height_ss) as i32 - 1;
             };
 
             let tex_num = WORLD_MAP[map_x as usize][map_y as usize] - 1;
@@ -847,9 +941,10 @@ fn wall_buffer(render_screen_width: usize, render_screen_height: usize, dir_x: f
             }
 
             let step = 1.0 * (TEX_HEIGHT as f64) / line_height;
-            let mut tex_pos = ((draw_start as f64) - screen_pitch - (pos_z.clone() / perp_wall_dist) - (render_screen_height as f64) / 2.0 + line_height / 2.0) * step;
+            let mut tex_pos = ((draw_start as f64) - screen_pitch - (pos_z.clone() / perp_wall_dist) - (render_screen_height_ss as f64) / 2.0 + line_height / 2.0) * step;
 
-            let mut col_buffer: Vec<u32> = vec![0; render_screen_height];
+
+            let mut col_buffer: Vec<u32> = vec![0; render_screen_height_ss];
             for position_y in (draw_start as u32)..(draw_end as u32) {
                 let tex_y = (tex_pos as isize) & ((TEX_HEIGHT as isize) - 1);
                 tex_pos += step;
@@ -865,28 +960,85 @@ fn wall_buffer(render_screen_width: usize, render_screen_height: usize, dir_x: f
             }
             (col_buffer.to_vec(), perp_wall_dist)
         }).collect();
+        if supersample_factor > 1 {
+            let final_buffer: Vec<Vec<u32>> = (0..render_screen_width).into_par_iter().map(|x| {
+                (0..render_screen_height).map(|y| {
+                    let mut r_sum = 0;
+                    let mut g_sum = 0;
+                    let mut b_sum = 0;
+                    for sy in 0..supersample_factor {
+                        for sx in 0..supersample_factor {
+                            let color = wall_buffer[x * supersample_factor + sx][y * supersample_factor + sy];
+                            let r = (color >> 16) & 0xFF;
+                            let g = (color >> 8) & 0xFF;
+                            let b = color & 0xFF;
+
+                            r_sum += r;
+                            g_sum += g;
+                            b_sum += b;
+                        }
+                    }
+
+                    let count = (supersample_factor * supersample_factor) as u32;
+                    let r_avg = (r_sum / count) as u32;
+                    let g_avg = (g_sum / count) as u32;
+                    let b_avg = (b_sum / count) as u32;
+
+                    (r_avg << 16) | (g_avg << 8) | b_avg
+                }).collect::<Vec<u32>>()
+            }).collect::<Vec<Vec<u32>>>();
+            let final_zbuffer: Vec<f64> = (0..render_screen_width).into_par_iter().map(|x| {
+                let mut min_z = f64::MAX;
+                for sx in 0..supersample_factor {
+                    let z = z_buffer[x * supersample_factor + sx];
+                    if z < min_z {
+                        min_z = z;
+                    }
+                }
+                min_z
+            }).collect();
+            
+            
+            return (final_buffer, final_zbuffer)
+        }
+
         (wall_buffer, z_buffer)
     }
 }    
-fn ceiling_buffer(render_screen_width: usize, render_screen_height: usize, screen_pitch: f64, half_screen_height: f64, pos_z: f64, ray_dir_x1: f64, ray_dir_x0: f64, ray_dir_y1: f64, ray_dir_y0: f64, pos_x: f64, pos_y: f64, texture: [[u32; 4096]; 11]) -> Vec<Vec<u32>> {
+fn ceiling_buffer(
+    render_screen_width: usize,
+    render_screen_height: usize,
+    screen_pitch: f64,
+    half_screen_height: f64,
+    pos_z: f64,
+    ray_dir_x1: f64,
+    ray_dir_x0: f64,
+    ray_dir_y1: f64,
+    ray_dir_y0: f64,
+    pos_x: f64,
+    pos_y: f64,
+    texture: Vec<Vec<u32>>,
+    supersample_factor: usize
+) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Ceiling Buffer");
     {
-        let ceiling_floor_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
-            let is_floor = y as isize > render_screen_height as isize / 2 + screen_pitch as isize;
+        let ceiling_floor_buffer: Vec<Vec<u32>> = (0..render_screen_height*supersample_factor).into_par_iter().map(|y| {
+            let is_floor = y as isize > (render_screen_height * supersample_factor) as isize / 2 + (screen_pitch * supersample_factor as f64) as isize;
             let p  = if is_floor {
-                (y as isize) - (render_screen_height as isize) / 2 - screen_pitch as isize
+                (y as isize) - (render_screen_height * supersample_factor) as isize / 2 - (screen_pitch * supersample_factor as f64) as isize
             } else {
-                render_screen_height as isize / 2 - y as isize + screen_pitch as isize
+                (render_screen_height * supersample_factor) as isize / 2 - y as isize + (screen_pitch * supersample_factor as f64) as isize
             };
             let cam_z = if is_floor { half_screen_height + pos_z } else { half_screen_height - pos_z};
-            let row_distance = cam_z / (p as f64);
-            let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (render_screen_width as f64);
-            let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (render_screen_width as f64);
+            let row_distance = cam_z / (p as f64 / supersample_factor as f64);
+            let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / (render_screen_width as f64 * supersample_factor as f64);
+            let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / (render_screen_width as f64 * supersample_factor as f64);
+
             let mut floor_x = pos_x + row_distance * ray_dir_x0;
             let mut floor_y = pos_y + row_distance * ray_dir_y0;
             let mut x_buffer: Vec<u32> = Vec::with_capacity(render_screen_width);
-            (0..render_screen_width).for_each(|_| {
+            (0..render_screen_width*supersample_factor).for_each(|_| {
                 let tx = ((TEX_WIDTH as f64) * floor_x.fract()) as isize & (TEX_WIDTH - 1) as isize;
                 let ty = ((TEX_HEIGHT as f64) * floor_y.fract()) as isize & (TEX_HEIGHT - 1) as isize;
                 floor_x += floor_step_x;
@@ -901,6 +1053,88 @@ fn ceiling_buffer(render_screen_width: usize, render_screen_height: usize, scree
             });
             x_buffer
         }).collect();
+        if supersample_factor > 1 {
+                // Averaging pixels to reduce to original size.
+        let final_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
+            (0..render_screen_width).map(|x| {
+                let mut r_sum = 0;
+                let mut g_sum = 0;
+                let mut b_sum = 0;
+                for sy in 0..supersample_factor {
+                    for sx in 0..supersample_factor {
+                        let color = ceiling_floor_buffer[y * supersample_factor + sy][x * supersample_factor + sx];
+                        let r = (color >> 16) & 0xFF;
+                        let g = (color >> 8) & 0xFF;
+                        let b = color & 0xFF;
+
+                        r_sum += r;
+                        g_sum += g;
+                        b_sum += b;
+                    }
+                }
+
+                let count = (supersample_factor * supersample_factor) as u32;
+                let r_avg = (r_sum / count) as u32;
+                let g_avg = (g_sum / count) as u32;
+                let b_avg = (b_sum / count) as u32;
+
+                (r_avg << 16) | (g_avg << 8) | b_avg
+            }).collect::<Vec<u32>>()
+        }).collect::<Vec<Vec<u32>>>();
+
+        return final_buffer
+
+        }
         ceiling_floor_buffer
+    }
+}
+fn render_text_to_buffer(
+    r: u32,
+    g: u32,
+    b: u32,
+    text: &str,
+    size: f32,
+    font: fontdue::Font,
+    pos_x: f32,
+    pos_y: f32,
+    buffer: &mut [u32],
+    width: usize,
+    height: usize
+) {
+    let fonts = &[font.clone()];
+    let mut layout = Layout::new(CoordinateSystem::PositiveYUp);
+    let font_scale = 0.75 * size;
+    let scale = (height as f32 / font_scale).round();  // Scale the font to the height as per original function
+    layout.append(fonts, &TextStyle::new(text, scale, 0));
+    let glyph_vec = layout.glyphs();
+    let (mut x, y) = (pos_x, pos_y);
+    for glyph in glyph_vec {
+        let (metrics, bitmap) = font.rasterize(glyph.parent, scale);
+        for (i, pixel) in bitmap.iter().enumerate() {
+            let bitmap_x = i % metrics.width;
+            let bitmap_y = i / metrics.width;
+
+            let buffer_x = x as usize + bitmap_x;
+            let buffer_y = if y as usize > metrics.height as usize { 
+                (y as usize - metrics.height as usize) + bitmap_y 
+            } else { 
+                bitmap_y 
+            };
+
+            if buffer_x < width && buffer_y < height {
+                let buffer_index = buffer_y * width + buffer_x;
+
+                // RGBA conversion with provided colors.
+                let alpha = *pixel as u32;
+                let red = r * alpha / 0xFF;
+                let green = g * alpha / 0xFF;
+                let blue = b * alpha / 0xFF;
+                let rgba = (red << 16) | (green << 8) | blue;
+                if rgba != 0 {
+                buffer[buffer_index] = rgba;
+                }
+            }
+        }
+        x += metrics.advance_width;
     }
 }

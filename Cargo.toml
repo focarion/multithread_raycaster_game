@@ -1,6 +1,6 @@
 [package]
 name = "multithread_raycaster_game"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 
@@ -29,20 +29,20 @@ debug = ["profiling", "tracing", "tracing-subscriber", "tracing-tracy"]
 [dependencies]
 rayon = "1.7"
 winit = "0.28"
-softbuffer = "0.2"
+softbuffer = "0.3"
 image = {version = "0.24",features = ["png"], default-features = false}
-ab_glyph = "0.2"
+fontdue = "0.7"
 packed_simd = "0.3"
+clap = {version = "4.3", features = ["cargo"]}
+tracing = {version = "0.1", optional = true}
+tracing-subscriber = {version = "0.3", features = ["json", "local-time"], optional = true}
+profiling = {version = "1.0", features = ["profile-with-tracy"], optional = true}
+tracing-tracy = {version = "0.10", optional = true}
 
 
 [dev-dependencies]
 criterion = "0.5"
 
-[target.'cfg(debug_assertions)'.dependencies]
-tracing = {version = "0.1", optional = true}
-tracing-subscriber = {version = "0.3", features = ["json", "local-time"], optional = true}
-profiling = {version = "1.0", features = ["profile-with-tracy"], optional = true}
-tracing-tracy = {version = "0.10", optional = true}
 
 [[bench]]
 name = "raycasting_benchmarks"
