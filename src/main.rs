@@ -499,7 +499,7 @@ fn main() {
 
                     let sprite_order: Vec<usize> = sprite_data.into_iter().map(|(order, _)| order).collect();
 
-                    let sprite_buffer = sprite_buffer(render_screen_width, render_screen_height, sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture.clone());
+                    let sprite_buffer = sprite_buffer(render_screen_width, render_screen_height, sprite_order, pos_x, pos_y, plane_x, dir_y, dir_x, plane_y, screen_pitch, pos_z, z_buffer, texture.clone(), supersample_factor);
 
                     let mut transposed_sprite_buffer: Vec<Vec<u32>> = vec![vec![0; render_screen_width]; render_screen_height];
                     #[cfg(feature = "debug")]
@@ -768,13 +768,16 @@ fn sprite_buffer(
     screen_pitch: f64,
     pos_z: f64,
     z_buffer: Vec<f64>,
-    texture: Vec<Vec<u32>>
+    texture: Vec<Vec<u32>>,
+    supersample_factor: usize
 ) -> Vec<Vec<u32>> {
     #[cfg(feature = "debug")]
     profiling::scope!("Sprite Buffer");
     {
-        let sprite_buffer: Vec<Vec<u32>> = (0..render_screen_width).into_par_iter().map(|x| {
-            let mut column_buffer = vec![0; render_screen_height];
+        let render_screen_width_ss = render_screen_width * supersample_factor;
+        let render_screen_height_ss = render_screen_height * supersample_factor;
+        let sprite_buffer: Vec<Vec<u32>> = (0..render_screen_width_ss).into_par_iter().map(|x| {
+            let mut column_buffer = vec![0; render_screen_height_ss];
 
             for index in 0..NUM_SPRITES {
                 let sprite_x = SPRITE[sprite_order[index]].x - pos_x;
@@ -785,40 +788,44 @@ fn sprite_buffer(
                 let transform_x = inv_det * (dir_y * sprite_x - dir_x * sprite_y);
                 let transform_y = inv_det * (-plane_y * sprite_x + plane_x * sprite_y);
 
-                let sprite_screen_x = ((render_screen_width / 2) as f64 * (1.0 + transform_x / transform_y)) as isize;
+                let sprite_screen_x_ns = ((render_screen_width / 2) as f64 * (1.0 + transform_x / transform_y)) as isize;
 
                 const U_DIV: isize = 1;
                 const V_DIV: isize = 1;
                 const V_MOVE: f64 = 0.0;
                 let v_move_screen = ((V_MOVE / transform_y) + screen_pitch + pos_z / transform_y) as isize;
 
-                let sprite_height = ((render_screen_height as f64 / (transform_y)).abs()) as isize / V_DIV;
-                let mut draw_start_y = -sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
+                let sprite_height_ns = ((render_screen_height as f64 / (transform_y)).abs()) as isize / V_DIV;
+                let mut draw_start_y = -sprite_height_ns / 2 + render_screen_height as isize / 2 + v_move_screen;
                 if draw_start_y < 0 {
                     draw_start_y = 0
                 };
-                let mut draw_end_y = sprite_height / 2 + render_screen_height as isize / 2 + v_move_screen;
+                draw_start_y *= supersample_factor as isize;
+                let mut draw_end_y = sprite_height_ns / 2 + render_screen_height as isize / 2 + v_move_screen;
                 if draw_end_y >= render_screen_height as isize {
                     draw_end_y = render_screen_height as isize - 1
                 };
+                draw_end_y *= supersample_factor as isize;
 
-                let sprite_width = ((render_screen_height as f64 / (transform_y)).abs()) as isize / U_DIV;
-                let mut draw_start_x = -sprite_width / 2 + sprite_screen_x;
+                let sprite_width_ns = ((render_screen_height as f64 / (transform_y)).abs()) as isize / U_DIV;
+                let mut draw_start_x = -sprite_width_ns / 2 + sprite_screen_x_ns;
                 if draw_start_x < 0 {
                     draw_start_x = 0
                 };
-                let mut draw_end_x = sprite_width / 2 + sprite_screen_x;
+                draw_start_x *= supersample_factor as isize;
+                let mut draw_end_x = sprite_width_ns / 2 + sprite_screen_x_ns;
                 if draw_end_x > render_screen_width as isize {
                     draw_end_x = render_screen_width as isize
                 };
+                draw_end_x *= supersample_factor as isize;
 
                 if x as isize >= draw_start_x && (x as isize) < draw_end_x {
-                    let stripe = x as isize;
-                    let tex_x = (256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * TEX_WIDTH as isize / sprite_width) / 256;
-                    if transform_y > 0.0 && transform_y < z_buffer[stripe as usize] {
+                    let stripe_ns = x as isize / supersample_factor as isize;
+                    let tex_x = (256 * (stripe_ns - (-sprite_width_ns / 2 + sprite_screen_x_ns)) * TEX_WIDTH as isize / sprite_width_ns) / 256;
+                    if transform_y > 0.0 && transform_y < z_buffer[stripe_ns as usize] {
                         for y in draw_start_y..draw_end_y {
-                            let d = (y - v_move_screen) * 256 - render_screen_height as isize * 128 + sprite_height * 128;
-                            let tex_y = ((d * TEX_HEIGHT as isize) / sprite_height) / 256;
+                            let d = ((y / supersample_factor as isize) - v_move_screen) * 256 - render_screen_height as isize * 128 + sprite_height_ns * 128;
+                            let tex_y = ((d * TEX_HEIGHT as isize) / sprite_height_ns) / 256;
                             let color = texture[SPRITE[sprite_order[index]].texture][(TEX_WIDTH as isize * tex_y + tex_x) as usize];
                             if (color & 0x00FFFFFF) != 0 {
                                 column_buffer[y as usize] = color;
@@ -830,6 +837,37 @@ fn sprite_buffer(
 
             column_buffer
         }).collect();
+        if supersample_factor > 1 {
+            let final_buffer: Vec<Vec<u32>> = (0..render_screen_width).into_par_iter().map(|x| {
+                (0..render_screen_height).map(|y| {
+                    let mut r_sum = 0;
+                    let mut g_sum = 0;
+                    let mut b_sum = 0;
+                    for sy in 0..supersample_factor {
+                        for sx in 0..supersample_factor {
+                            let color = sprite_buffer[x * supersample_factor + sx][y * supersample_factor + sy];
+                            let r = (color >> 16) & 0xFF;
+                            let g = (color >> 8) & 0xFF;
+                            let b = color & 0xFF;
+
+                            r_sum += r;
+                            g_sum += g;
+                            b_sum += b;
+                        }
+                    }
+
+                    let count = (supersample_factor * supersample_factor) as u32;
+                    let r_avg = (r_sum / count) as u32;
+                    let g_avg = (g_sum / count) as u32;
+                    let b_avg = (b_sum / count) as u32;
+
+                    (r_avg << 16) | (g_avg << 8) | b_avg
+                }).collect::<Vec<u32>>()
+            }).collect::<Vec<Vec<u32>>>();
+            
+            
+            return final_buffer
+        }
         sprite_buffer
     }
 }
@@ -1055,34 +1093,34 @@ fn ceiling_buffer(
         }).collect();
         if supersample_factor > 1 {
                 // Averaging pixels to reduce to original size.
-        let final_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
-            (0..render_screen_width).map(|x| {
-                let mut r_sum = 0;
-                let mut g_sum = 0;
-                let mut b_sum = 0;
-                for sy in 0..supersample_factor {
-                    for sx in 0..supersample_factor {
-                        let color = ceiling_floor_buffer[y * supersample_factor + sy][x * supersample_factor + sx];
-                        let r = (color >> 16) & 0xFF;
-                        let g = (color >> 8) & 0xFF;
-                        let b = color & 0xFF;
+            let final_buffer: Vec<Vec<u32>> = (0..render_screen_height).into_par_iter().map(|y| {
+                (0..render_screen_width).map(|x| {
+                    let mut r_sum = 0;
+                    let mut g_sum = 0;
+                    let mut b_sum = 0;
+                    for sy in 0..supersample_factor {
+                        for sx in 0..supersample_factor {
+                            let color = ceiling_floor_buffer[y * supersample_factor + sy][x * supersample_factor + sx];
+                            let r = (color >> 16) & 0xFF;
+                            let g = (color >> 8) & 0xFF;
+                            let b = color & 0xFF;
 
-                        r_sum += r;
-                        g_sum += g;
-                        b_sum += b;
+                            r_sum += r;
+                            g_sum += g;
+                            b_sum += b;
+                        }
                     }
-                }
 
-                let count = (supersample_factor * supersample_factor) as u32;
-                let r_avg = (r_sum / count) as u32;
-                let g_avg = (g_sum / count) as u32;
-                let b_avg = (b_sum / count) as u32;
+                    let count = (supersample_factor * supersample_factor) as u32;
+                    let r_avg = (r_sum / count) as u32;
+                    let g_avg = (g_sum / count) as u32;
+                    let b_avg = (b_sum / count) as u32;
 
-                (r_avg << 16) | (g_avg << 8) | b_avg
-            }).collect::<Vec<u32>>()
-        }).collect::<Vec<Vec<u32>>>();
+                    (r_avg << 16) | (g_avg << 8) | b_avg
+                }).collect::<Vec<u32>>()
+            }).collect::<Vec<Vec<u32>>>();
 
-        return final_buffer
+            return final_buffer
 
         }
         ceiling_floor_buffer
