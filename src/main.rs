@@ -3,7 +3,7 @@ use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
 use profiling::{tracy_client, scope};
 
 use rayon::prelude::*;
-use std::{time::Duration, collections::HashSet, ptr, num::NonZeroU32};
+use std::{time::Duration, collections::HashSet, ptr, num::{NonZeroU32, IntErrorKind}, cmp::{max, min}};
 use winit::{
     event::{Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, ElementState},
     event_loop::{ControlFlow, EventLoop},
@@ -145,12 +145,29 @@ fn main() {
                             render_screen_height = 2160;
                         },
                         _ => {
-                            println!("No resolution specified, using default");
+                            println!("Option Unavailable, using default");
                             return
                         }
                     }
-                }, Err(_) => {
-                    println!("Your input was invalid");
+                }, Err(error) => {
+                    match error {
+                        int_error => {
+                            match *int_error.kind() {
+                                IntErrorKind::Empty => {
+                                    println!("No resolution specified, using default");
+                                },
+                                IntErrorKind::InvalidDigit => {
+                                    println!("This is not a number so using default");
+                                },
+                                IntErrorKind::Zero => {
+                                    println!("Zero is invalid so using default");
+                                }
+                                _ => {
+                                    println!("Overflowed int... Good job! Using default");
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -234,8 +251,25 @@ fn main() {
                             rayon::ThreadPoolBuilder::new().num_threads(thread_amount).build_global().unwrap();
                         }
                     }
-                }, Err(_) => {
-                    println!("Your input was invalid");
+                }, Err(error) => {
+                    match error {
+                        int_error => {
+                            match *int_error.kind() {
+                                IntErrorKind::Empty => {
+                                    println!("No thread amount specified, using default");
+                                },
+                                IntErrorKind::InvalidDigit => {
+                                    println!("This is not a number so using default");
+                                },
+                                IntErrorKind::Zero => {
+                                    println!("Zero is invalid so using default");
+                                }
+                                _ => {
+                                    println!("Overflowed int... Good job! Using default");
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -272,11 +306,29 @@ fn main() {
                             supersample_factor = 16
                         },
                         _ => {
-                            supersample_factor = 1
+                            println!("No anti-aliasing technique specified, using default");
+                            return
                         }
                     }
-                }, Err(_) => {
-                    println!("Your input was invalid");
+                }, Err(error) => {
+                    match error {
+                        int_error => {
+                            match *int_error.kind() {
+                                IntErrorKind::Empty => {
+                                    println!("No anti-aliasing specified, using default");
+                                },
+                                IntErrorKind::InvalidDigit => {
+                                    println!("This is not a number so using default");
+                                },
+                                IntErrorKind::Zero => {
+                                    println!("Zero is invalid so using default");
+                                }
+                                _ => {
+                                    println!("Overflowed int... Good job! Using default");
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -424,9 +476,6 @@ fn main() {
     let mut vertical_velocity = 0.0;
     let mut last_update = std::time::Instant::now();
     let mut movement_cooldown = std::time::Instant::now();
-    
-    // rayon::ThreadPoolBuilder::new().num_threads(12).build_global().unwrap();
-    
     let mut pressed_keys = HashSet::new();
     #[cfg(feature = "debug")]
     scope!("Main Loop");
@@ -437,7 +486,12 @@ fn main() {
         previous_frame_time = current_frame_time;
         let frame_time_ms = frame_duration.as_millis();
         
-        movespeed = (frame_time_ms as f64 / 1000.0) * 3.5;   
+        if !is_crouched {
+            movespeed = (frame_time_ms as f64 / 1000.0) * 3.5; 
+        } else {
+            movespeed = (frame_time_ms as f64 / 1000.0) * 2.0;
+        }
+          
         match event {
             Event::RedrawRequested(window_id) if window_id == window.id() => {
                 #[cfg(feature = "debug")]
@@ -645,7 +699,8 @@ fn main() {
                         plane_y = old_plane_x * (-x / sensitivity).sin() + plane_y * (-x / sensitivity).cos();
                         let y = delta.1;
                         screen_pitch -= y;
-                        screen_pitch = f64::clamp(screen_pitch, -((render_screen_width as f64)*0.28), (render_screen_width as f64)*0.28);
+                        let max_pitch_percentage = 1.25;
+                        screen_pitch = f64::clamp(screen_pitch, -((render_screen_width as f64)*max_pitch_percentage), (render_screen_width as f64)*max_pitch_percentage);
                     }
                     
                     
@@ -950,14 +1005,17 @@ fn wall_buffer(
             let line_height = (render_screen_height_ss as f64 / perp_wall_dist).abs();
 
 
-            let mut draw_start = -line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+            let mut draw_start = max(0, -line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32);
             if draw_start < 0 {
                 draw_start = 0;
             };
-            let mut draw_end = line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32;
+            let mut draw_end = min(render_screen_height_ss as i32 - 1, line_height as i32 / 2 + (render_screen_height_ss) as i32 / 2 + screen_pitch as i32 + (pos_z.clone() / perp_wall_dist) as i32);
             if draw_end >= (render_screen_height_ss) as i32 {
                 draw_end = (render_screen_height_ss) as i32 - 1;
             };
+            if draw_end < draw_start {
+                draw_end = draw_start;
+            }
 
             let tex_num = WORLD_MAP[map_x as usize][map_y as usize] - 1;
 
@@ -983,7 +1041,9 @@ fn wall_buffer(
 
 
             let mut col_buffer: Vec<u32> = vec![0; render_screen_height_ss];
-            for position_y in (draw_start as u32)..(draw_end as u32) {
+            let draw_start_u32 = draw_start as u32;
+            let draw_end_u32 = draw_end as u32;
+            for position_y in draw_start_u32..draw_end_u32 {
                 let tex_y = (tex_pos as isize) & ((TEX_HEIGHT as isize) - 1);
                 tex_pos += step;
                 let color = texture[tex_num as usize][((TEX_HEIGHT as isize) * tex_y + tex_x) as usize];
