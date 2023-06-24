@@ -7,7 +7,7 @@ use std::{time::Duration, collections::HashSet, ptr, num::{NonZeroU32, IntErrorK
 use winit::{
     event::{Event, DeviceEvent, WindowEvent, KeyboardInput, VirtualKeyCode, ElementState},
     event_loop::{ControlFlow, EventLoop},
-    window::{WindowBuilder, CursorGrabMode}, dpi::PhysicalSize,
+    window::{WindowBuilder, CursorGrabMode, Fullscreen}, dpi::PhysicalSize,
 };
 use image::{Pixel, GenericImageView};
 use std::io::{self, Write};
@@ -84,8 +84,14 @@ const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.pn
 fn main() {
     let event_loop = EventLoop::new();
     let monitor_resolution = event_loop.primary_monitor().unwrap().size();
+    let monitor = event_loop
+        .available_monitors()
+        .next()
+        .expect("no monitor found!");
+    let mode = monitor.video_modes().next().expect("no mode found");
     let (monitor_width, monitor_height) = (monitor_resolution.width, monitor_resolution.height);
-    let (mut render_screen_width, mut render_screen_height) = (1280, 720);
+    let (mut render_screen_width, mut render_screen_height): (usize, usize) = (1280, 720);
+    let (scale_width, scale_height);
     let mut resolution_input = String::new();
     let mut supersample_factor = 1;
         
@@ -257,15 +263,63 @@ fn main() {
                             match *int_error.kind() {
                                 IntErrorKind::Empty => {
                                     println!("No thread amount specified, using default");
+                                    let thread_amount = {
+                                        let threads = available_parallelism().unwrap().get();
+                                        if threads < 5 {
+                                            4
+                                        } else if threads > 12 {
+                                            12
+                                        } else {
+                                        (threads as f64 * 0.8) as usize
+                                        }
+                                    };
+                                    
+                                    rayon::ThreadPoolBuilder::new().num_threads(thread_amount).build_global().unwrap();
                                 },
                                 IntErrorKind::InvalidDigit => {
                                     println!("This is not a number so using default");
+                                    let thread_amount = {
+                                        let threads = available_parallelism().unwrap().get();
+                                        if threads < 5 {
+                                            4
+                                        } else if threads > 12 {
+                                            12
+                                        } else {
+                                        (threads as f64 * 0.8) as usize
+                                        }
+                                    };
+                                    
+                                    rayon::ThreadPoolBuilder::new().num_threads(thread_amount).build_global().unwrap();
                                 },
                                 IntErrorKind::Zero => {
                                     println!("Zero is invalid so using default");
+                                    let thread_amount = {
+                                        let threads = available_parallelism().unwrap().get();
+                                        if threads < 5 {
+                                            4
+                                        } else if threads > 12 {
+                                            12
+                                        } else {
+                                        (threads as f64 * 0.8) as usize
+                                        }
+                                    };
+                                    
+                                    rayon::ThreadPoolBuilder::new().num_threads(thread_amount).build_global().unwrap();
                                 }
                                 _ => {
                                     println!("Overflowed int... Good job! Using default");
+                                    let thread_amount = {
+                                        let threads = available_parallelism().unwrap().get();
+                                        if threads < 5 {
+                                            4
+                                        } else if threads > 12 {
+                                            12
+                                        } else {
+                                        (threads as f64 * 0.8) as usize
+                                        }
+                                    };
+                                    
+                                    rayon::ThreadPoolBuilder::new().num_threads(thread_amount).build_global().unwrap();
                                 }
                             }
                         }
@@ -336,6 +390,143 @@ fn main() {
             panic!("Failed to read line: {}", error);
         }
     }
+    println!("Do you want to scale to another resolution?");
+    println!("Select the resolution:");
+    println!("1 - 1024x576");
+    println!("2 - 1280x720");
+    println!("3 - 1366x768");
+    println!("4 - 1600x900");
+    println!("5 - 1920x1080");
+    println!("6 - 2560x1440");
+    println!("7 - 3200x1800");
+    println!("8 - 3840x2160");
+    let mut scale_input = String::new();
+    io::stdout().flush().unwrap();
+    match io::stdin().read_line(&mut scale_input) {
+        Ok(_) => {
+            match scale_input.trim().parse::<usize>(){
+                Ok(value) => {
+                    match value {
+                        1 => {
+                            scale_width = 1024;
+                            scale_height = 576;
+                        },
+                        2 => {
+                            scale_width = 1280;
+                            scale_height = 720;
+                        },
+                        3 => {
+                            scale_width = 1366;
+                            scale_height = 768;
+                        },
+                        4 => {
+                            scale_width = 1600;
+                            scale_height = 900;
+                        },
+                        5 => {
+                            scale_width = 1920;
+                            scale_height = 1080;
+                        },
+                        6 => {
+                            scale_width = 2560;
+                            scale_height = 1440;
+                        },
+                        7 => {
+                            scale_width = 3200;
+                            scale_height = 1800;
+                        },
+                        8 => {
+                            scale_width = 3840;
+                            scale_height = 2160;
+                        },
+                        _ => {
+                            println!("Option Unavailable, using default");
+                            scale_width = render_screen_width;
+                            scale_height = render_screen_height;
+                        }
+                    }
+                }, Err(error) => {
+                    match error {
+                        int_error => {
+                            match *int_error.kind() {
+                                IntErrorKind::Empty => {
+                                    println!("No resolution specified, using default");
+                                    scale_width = render_screen_width;
+                                    scale_height = render_screen_height;
+                                },
+                                IntErrorKind::InvalidDigit => {
+                                    println!("This is not a number so using default");
+                                    scale_width = render_screen_width;
+                                    scale_height = render_screen_height;
+                                },
+                                IntErrorKind::Zero => {
+                                    println!("Zero is invalid so using default");
+                                    scale_width = render_screen_width;
+                                    scale_height = render_screen_height;
+                                }
+                                _ => {
+                                    println!("Overflowed int... Good job! Using default");
+                                    scale_width = render_screen_width;
+                                    scale_height = render_screen_height;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+        Err(error) => {
+            panic!("Failed to read line: {}", error);
+        }
+    }
+    let mut is_fullscreen = false;
+    let mut fscreen_input = String::new();
+    println!("Fullscreen?");
+    println!("1 - Yes");
+    println!("2 - No");
+    match io::stdin().read_line(&mut fscreen_input) {
+        Ok(_) => {
+            match fscreen_input.trim().parse::<usize>(){
+                Ok(value) => {
+                    match value {
+                        1 => {
+                            is_fullscreen = true
+                        },
+                        2 => {
+                            is_fullscreen = false
+                        },
+                        _ => {
+                            println!("Option Unavailable, using default");
+                        }
+                    }
+                }, Err(error) => {
+                    match error {
+                        int_error => {
+                            match *int_error.kind() {
+                                IntErrorKind::Empty => {
+                                    println!("Not specified, using default");
+                                },
+                                IntErrorKind::InvalidDigit => {
+                                    println!("This is not a number so using default");
+                                },
+                                IntErrorKind::Zero => {
+                                    println!("Zero is invalid so using default");
+                                }
+                                _ => {
+                                    println!("Overflowed int... Good job! Using default");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+        Err(error) => {
+            panic!("Failed to read line: {}", error);
+        }
+    }
     #[cfg(feature = "debug")]
     {
     tracy_client::Client::start();
@@ -349,14 +540,25 @@ fn main() {
     }
     let font = include_bytes!("../assets/fonts/hud.otf") as &[u8];
     let game_text_font = fontdue::Font::from_bytes(font, fontdue::FontSettings::default()).unwrap();
-    let display_size = PhysicalSize::new(render_screen_width as u32, render_screen_height as u32);
+    let display_size = PhysicalSize::new(scale_width as u32, scale_height as u32);
     let window = WindowBuilder::new().with_title(format!("Multithread Raycaster Game Version: {}", clap::crate_version!())).with_inner_size(display_size).with_resizable(false).build(&event_loop).unwrap();
     let graphics_context = unsafe { softbuffer::Context::new(&window) }.unwrap();
     let mut surface = unsafe { softbuffer::Surface::new(&graphics_context, &window) }.unwrap();
+    if is_fullscreen {
+        if monitor_height as usize == scale_height && monitor_width as usize == scale_width {
+            let fullscreen = Some(Fullscreen::Borderless(Some(monitor.clone())));
+             window.set_fullscreen(fullscreen);
+            
+        } else {
+            let fullscreen = Some(Fullscreen::Exclusive(mode.clone()));
+             window.set_fullscreen(fullscreen);
+        }
+        
+    }
     surface
         .resize(
-            NonZeroU32::new(render_screen_width as u32).unwrap(),
-            NonZeroU32::new(render_screen_height as u32).unwrap(),
+            NonZeroU32::new(scale_width as u32).unwrap(),
+            NonZeroU32::new(scale_height as u32).unwrap(),
         )
         .unwrap();
     let start_time = std::time::Instant::now();
@@ -477,6 +679,7 @@ fn main() {
     let mut last_update = std::time::Instant::now();
     let mut movement_cooldown = std::time::Instant::now();
     let mut pressed_keys = HashSet::new();
+    let mut frames_per_second = String::new();
     #[cfg(feature = "debug")]
     scope!("Main Loop");
     event_loop.run(move |event, _, control_flow| {
@@ -499,7 +702,8 @@ fn main() {
                 {
                     frames += 1;
                     if last_fps_print_time.elapsed() > Duration::from_secs(1) {
-                        println!("FPS: {:.1}", frames as f64 / last_fps_print_time.elapsed().as_secs_f64());
+                        //println!("FPS: {:.1}", frames as f64 / last_fps_print_time.elapsed().as_secs_f64());
+                        frames_per_second = format!("FPS: {:.1}", frames as f64 / last_fps_print_time.elapsed().as_secs_f64());
                         last_fps_print_time = std::time::Instant::now();
                         frames = 0;
                     }
@@ -594,9 +798,12 @@ fn main() {
                         #[cfg(feature = "debug")]
                         profiling::scope!("Draw to Winit Frame");
                         {
-                            
+                            let final_buffer = rescale_buffer(&final_buffer, render_screen_width, render_screen_height, scale_width, scale_height);
                             let mut buffer: Vec<u32> = final_buffer.into_par_iter().flatten_iter().collect();
-                            
+                            if !mouse_lock {
+                                render_text_to_buffer(255, 75, 75, "Mouse Lock Off Press Alt To Enable",45.0, game_text_font.clone(), 0.0, 0.0,&mut buffer,  scale_width, scale_height, );
+                            }
+                            render_text_to_buffer(5, 5, 5, &format!("{}", frames_per_second),35.0, game_text_font.clone(), render_screen_width as f32 * 0.85, 0.0,&mut buffer,  scale_width, scale_height, );
                             //render_text_to_buffer(255, 255, 255, "Text",10.0, game_text_font.clone(), 0.0, render_screen_height as f32 / 1.1,&mut buffer,  render_screen_width, render_screen_height, );
                             //render_text_to_buffer(255, 0, 0, "Another Text",12.0, game_text_font.clone(), 0.0, render_screen_height as f32 / 1.8,&mut buffer,  render_screen_width, render_screen_height, );
                             //info!("Finish Assemblying final buffer");
@@ -1236,3 +1443,51 @@ fn render_text_to_buffer(
         x += metrics.advance_width;
     }
 }
+fn rescale_buffer(src_buffer: &Vec<Vec<u32>>, src_width: usize, src_height: usize, dst_width: usize, dst_height: usize) -> Vec<Vec<u32>> {
+    let scale_x = src_width as f64 / dst_width as f64;
+    let scale_y = src_height as f64 / dst_height as f64;
+    let dst_buffer: Vec<Vec<u32>> = (0..dst_height).into_par_iter().map(|dst_y| {
+        (0..dst_width).map(|dst_x| {
+            let src_x = (dst_x as f64 * scale_x).min(src_width as f64 - 1.0);
+            let src_y = (dst_y as f64 * scale_y).min(src_height as f64 - 1.0);
+
+
+    
+            let x1 = src_x.floor() as usize;
+            let y1 = src_y.floor() as usize;
+            let x2 = (x1 + 1).min(src_width - 1);
+            let y2 = (y1 + 1).min(src_height - 1);
+            let frac_x = src_x - src_x.floor();
+            let frac_y = src_y - src_y.floor();
+
+
+    
+            let a = src_buffer[y1][x1];
+            let b = src_buffer[y1][x2];
+            let c = src_buffer[y2][x1];
+            let d = src_buffer[y2][x2];
+            
+            
+    
+            let r = ((1.0 - frac_x) * (1.0 - frac_y) * ((a >> 16) & 0xFF) as f64
+            + frac_x * (1.0 - frac_y) * ((b >> 16) & 0xFF) as f64
+            + (1.0 - frac_x) * frac_y * ((c >> 16) & 0xFF) as f64
+            + frac_x * frac_y * ((d >> 16) & 0xFF) as f64) as u32;
+        
+        let g = ((1.0 - frac_x) * (1.0 - frac_y) * ((a >> 8) & 0xFF) as f64
+            + frac_x * (1.0 - frac_y) * ((b >> 8) & 0xFF) as f64
+            + (1.0 - frac_x) * frac_y * ((c >> 8) & 0xFF) as f64
+            + frac_x * frac_y * ((d >> 8) & 0xFF) as f64) as u32;
+        
+        let b = ((1.0 - frac_x) * (1.0 - frac_y) * (a & 0xFF) as f64
+            + frac_x * (1.0 - frac_y) * (b & 0xFF) as f64
+            + (1.0 - frac_x) * frac_y * (c & 0xFF) as f64
+            + frac_x * frac_y * (d & 0xFF) as f64) as u32;
+            (r << 16) | (g << 8) | b
+        }).collect()
+    }).collect();
+
+
+    dst_buffer
+}
+
