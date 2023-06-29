@@ -9,11 +9,14 @@ const RED_FLOORING_BYTES: &'static [u8] = include_bytes!("../assets/textures/red
 const BARREL_BYTES: &'static [u8] = include_bytes!("../assets/textures/barrel.png");
 const LIGHT_BYTES: &'static [u8] = include_bytes!("../assets/textures/light.png");
 const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.png");
+
+// const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.png");
 pub const GAME_MAIN_FONT: &[u8] = include_bytes!("../assets/fonts/hud.otf") as &[u8];
 use fontdue::Font;
 use image::{Pixel, GenericImageView};
 pub struct Assets {
     pub textures: Vec<Vec<u32>>,
+    pub two_dim_textures: Vec<Vec<Vec<u32>>>,
     pub fonts: Vec<Font>
 }
 impl Assets {
@@ -115,10 +118,16 @@ impl Assets {
         .collect();
         textures[10] = buffer.clone();
     }
+    // Two Dimensional Textures:
+    let mut two_dim_textures: Vec<Vec<Vec<u32>>>= vec![vec![vec![0; TEX_WIDTH as usize]; TEX_HEIGHT as usize]; 20];
+    {
+
+    }
     let game_text_font = fontdue::Font::from_bytes(GAME_MAIN_FONT, fontdue::FontSettings::default()).unwrap();
     let fonts = vec![game_text_font];
     Self {
         textures,
+        two_dim_textures,
         fonts
     }
     }

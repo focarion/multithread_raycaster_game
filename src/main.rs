@@ -90,8 +90,6 @@ fn main() {
     let mut mouse_lock_setup = true;
     let mut game_state = GameState::new();
     #[allow(unused_assignments)]
-    let mut last_update = std::time::Instant::now();
-    let mut movement_cooldown = std::time::Instant::now();
     let mut pressed_keys = HashSet::new();
     let mut frames_per_second = String::new();
     #[cfg(feature = "debug")]
@@ -181,47 +179,7 @@ fn main() {
                             }
                             //info!("Set Buffer");
                         }
-                        if game_state.player.states.is_jumping && !game_state.player.states.is_crouching && !game_state.player.states.is_crouched {
-                            let now = std::time::Instant::now();
-                            let delta_time = (now - last_update).as_secs_f64() * 3.0;
-                            last_update = now;
-                            game_state.player.pos.2 += game_state.player.vertical_velocity * delta_time;
-                            game_state.player.vertical_velocity -= 50.0 * delta_time;
-                        if game_state.player.pos.2 >= 200.0 {
-                            game_state.player.pos.2 = 200.0;
-                            game_state.player.vertical_velocity = -300.0;
-                        } else if game_state.player.pos.2 <= 0.0 {
-                            game_state.player.pos.2 = 0.0;
-                            game_state.player.states.is_jumping = false;
-                            game_state.player.vertical_velocity = 0.0;
-                        }
-                        } else if !game_state.player.states.is_jumping && game_state.player.states.is_crouching {
-                            let now = std::time::Instant::now();
-                            let delta_time = (now - last_update).as_secs_f64() * 3.0;
-                            last_update = now;
-                            if !game_state.player.states.is_crouched {
-                                game_state.player.pos.2 -= game_state.player.vertical_velocity * delta_time;
-                                if game_state.player.pos.2 <= -200.0 {
-                                    game_state.player.pos.2 = -200.0;
-                                    game_state.player.vertical_velocity = 0.0;
-                                    game_state.player.states.is_crouching = false;
-                                    game_state.player.states.is_crouched = true
-                                }
-                                
-                            } else {
-                                game_state.player.pos.2 += game_state.player.vertical_velocity * delta_time;
-                                if game_state.player.pos.2 >= 0.0 {
-                                    game_state.player.pos.2 = 0.0;
-                                    game_state.player.vertical_velocity = 0.0;
-                                    game_state.player.states.is_crouching = false;
-                                    game_state.player.states.is_crouched = false
-                                }
-                                
-                            }
-                            
-
-
-                        }
+                        game_state.player.update_jump();
                         #[cfg(feature = "debug")]
                         profiling::finish_frame!();
                     }
@@ -249,18 +207,8 @@ fn main() {
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::MouseMotion { delta } => { 
                     if mouse_lock {
-                        let x = delta.0;
-                        let sensitivity = render_screen_width as f64 / 5.0;
-                        let old_dir_x = game_state.player.dir.0;
-                        game_state.player.dir.0 = game_state.player.dir.0 * (-x / sensitivity).cos() - game_state.player.dir.1 * (-x / sensitivity).sin();
-                        game_state.player.dir.1 = old_dir_x * (-x / sensitivity).sin() + game_state.player.dir.1 * (-x / sensitivity).cos();
-                        let old_plane_x = game_state.player.plane.0;
-                        game_state.player.plane.0 = game_state.player.plane.0 * (-x / sensitivity).cos() - game_state.player.plane.1 * (-x / sensitivity).sin();
-                        game_state.player.plane.1 = old_plane_x * (-x / sensitivity).sin() + game_state.player.plane.1 * (-x / sensitivity).cos();
-                        let y = delta.1;
-                        game_state.player.screen_pitch -= y;
-                        let max_pitch_percentage = 1.25;
-                        game_state.player.screen_pitch = f64::clamp(game_state.player.screen_pitch, -((render_screen_width as f64)*max_pitch_percentage), (render_screen_width as f64)*max_pitch_percentage);
+                        let (x, y) = delta;
+                        game_state.player.move_camera(x, y, scale_width);
                     }
                     
                     
@@ -293,45 +241,22 @@ fn main() {
         for keycode in pressed_keys.clone() {
                 match keycode {
                     VirtualKeyCode::W => {
-                        if game_state.map[(game_state.player.pos.0 + game_state.player.dir.0 * game_state.player.movespeed) as usize][(game_state.player.pos.1) as usize] == 0 {game_state.player.pos.0 += game_state.player.dir.0 * game_state.player.movespeed};
-                        if game_state.map[(game_state.player.pos.0) as usize][(game_state.player.pos.1 + game_state.player.dir.1 * game_state.player.movespeed) as usize] == 0 {game_state.player.pos.1 += game_state.player.dir.1 * game_state.player.movespeed};
+                        game_state.player.walk_forward(&game_state.map)
                     },
                     VirtualKeyCode::A => {
-                        if game_state.map[(game_state.player.pos.0 - game_state.player.plane.0 * game_state.player.movespeed) as usize][(game_state.player.pos.1) as usize] == 0 {game_state.player.pos.0 -= game_state.player.plane.0 * game_state.player.movespeed};
-                        if game_state.map[(game_state.player.pos.0) as usize][(game_state.player.pos.1 - game_state.player.plane.1 * game_state.player.movespeed) as usize] == 0 {game_state.player.pos.1 -= game_state.player.plane.1 * game_state.player.movespeed};
+                        game_state.player.walk_left(&game_state.map)
                     },
                     VirtualKeyCode::S => {
-                        if game_state.map[(game_state.player.pos.0 - game_state.player.dir.0 * game_state.player.movespeed) as usize][(game_state.player.pos.1) as usize] == 0 {game_state.player.pos.0 -= game_state.player.dir.0 * game_state.player.movespeed};
-                        if game_state.map[(game_state.player.pos.0) as usize][(game_state.player.pos.1 - game_state.player.dir.1 * game_state.player.movespeed) as usize] == 0 {game_state.player.pos.1 -= game_state.player.dir.1 * game_state.player.movespeed};
+                        game_state.player.walk_backward(&game_state.map)
                     },
                     VirtualKeyCode::D => {
-                        if game_state.map[(game_state.player.pos.0 + game_state.player.plane.0 * game_state.player.movespeed) as usize][(game_state.player.pos.1) as usize] == 0 {game_state.player.pos.0 += game_state.player.plane.0 * game_state.player.movespeed};
-                        if game_state.map[(game_state.player.pos.0) as usize][(game_state.player.pos.1 + game_state.player.plane.1 * game_state.player.movespeed) as usize] == 0 {game_state.player.pos.1 += game_state.player.plane.1 * game_state.player.movespeed};
+                        game_state.player.walk_right(&game_state.map)
                     },
                     VirtualKeyCode::LControl => {
-                        if !game_state.player.states.is_jumping {
-                            if movement_cooldown.elapsed() > Duration::from_millis(250) {
-                                if !game_state.player.states.is_crouching && !game_state.player.states.is_crouched {
-                                    game_state.player.states.is_crouching = true;
-                                    game_state.player.vertical_velocity = 250.0;
-                                } else if !game_state.player.states.is_crouching && game_state.player.states.is_crouched {
-                                    game_state.player.states.is_crouching = true;
-                                    game_state.player.vertical_velocity = 250.0
-                                }
-                                movement_cooldown = std::time::Instant::now();
-                            }
-                        }
+                        game_state.player.crouch()
                     },
                     VirtualKeyCode::Space => {
-                        if !game_state.player.states.is_crouched {
-                            if movement_cooldown.elapsed() > Duration::from_millis(250) {
-                                if !game_state.player.states.is_jumping && !game_state.player.states.is_crouching {
-                                    game_state.player.states.is_jumping = true;
-                                    game_state.player.vertical_velocity = 300.0;
-                                }
-                                movement_cooldown = std::time::Instant::now();
-                            } 
-                        }
+                        game_state.player.jump()
                     },
                     
                     
