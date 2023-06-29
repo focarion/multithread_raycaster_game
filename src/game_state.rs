@@ -92,20 +92,142 @@ impl Player {
         Self { pos: self.pos, dir: self.dir, plane: self.plane, vertical_velocity: self.vertical_velocity, movespeed: self.movespeed, screen_pitch: self.screen_pitch, hitbox_radius: self.hitbox_radius, states: self.states, timings: self.timings }
     }
     pub fn walk_forward(&mut self, map: &Vec<Vec<usize>>) {
-        if map[(self.pos.0 + self.dir.0 * self.movespeed) as usize][(self.pos.1) as usize] == 0 {self.pos.0 += self.dir.0 * self.movespeed};
-        if map[(self.pos.0) as usize][(self.pos.1 + self.dir.1 * self.movespeed) as usize] == 0 {self.pos.1 += self.dir.1 * self.movespeed};
+        let new_pos_x = self.pos.0 + self.dir.0 * self.movespeed;
+        let new_pos_y = self.pos.1 + self.dir.1 * self.movespeed;
+    
+        // Calculate all four hitbox corners for the new X position
+        let hitbox_corner_1_x = (new_pos_x + self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_2_x = (new_pos_x - self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_3_x = (new_pos_x + self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+        let hitbox_corner_4_x = (new_pos_x - self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new X position
+        if map[hitbox_corner_1_x.0 as usize][hitbox_corner_1_x.1 as usize] == 0 && 
+           map[hitbox_corner_2_x.0 as usize][hitbox_corner_2_x.1 as usize] == 0 &&
+           map[hitbox_corner_3_x.0 as usize][hitbox_corner_3_x.1 as usize] == 0 &&
+           map[hitbox_corner_4_x.0 as usize][hitbox_corner_4_x.1 as usize] == 0 {
+            // If no collisions are detected, update the player's X position
+            self.pos.0 = new_pos_x;
+        }
+    
+        // Calculate all four hitbox corners for the new Y position
+        let hitbox_corner_1_y = (self.pos.0 + self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_2_y = (self.pos.0 - self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_3_y = (self.pos.0 + self.hitbox_radius, new_pos_y - self.hitbox_radius);
+        let hitbox_corner_4_y = (self.pos.0 - self.hitbox_radius, new_pos_y - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new Y position
+        if map[hitbox_corner_1_y.0 as usize][hitbox_corner_1_y.1 as usize] == 0 && 
+           map[hitbox_corner_2_y.0 as usize][hitbox_corner_2_y.1 as usize] == 0 &&
+           map[hitbox_corner_3_y.0 as usize][hitbox_corner_3_y.1 as usize] == 0 &&
+           map[hitbox_corner_4_y.0 as usize][hitbox_corner_4_y.1 as usize] == 0 {
+            // If no collisions are detected, update the player's Y position
+            self.pos.1 = new_pos_y;
+        }
     }
+    
+    
     pub fn walk_left(&mut self, map: &Vec<Vec<usize>>) {
-        if map[(self.pos.0 - self.plane.0 * self.movespeed) as usize][(self.pos.1) as usize] == 0 {self.pos.0 -= self.plane.0 * self.movespeed};
-        if map[(self.pos.0) as usize][(self.pos.1 - self.plane.1 * self.movespeed) as usize] == 0 {self.pos.1 -= self.plane.1 * self.movespeed};
-    }
-    pub fn walk_backward(&mut self, map: &Vec<Vec<usize>>) {
-        if map[(self.pos.0 - self.dir.0 * self.movespeed) as usize][(self.pos.1) as usize] == 0 {self.pos.0 -= self.dir.0 * self.movespeed};
-        if map[(self.pos.0) as usize][(self.pos.1 - self.dir.1 * self.movespeed) as usize] == 0 {self.pos.1 -= self.dir.1 * self.movespeed};
+        let new_pos_x = self.pos.0 - self.dir.1 * self.movespeed;
+        let new_pos_y = self.pos.1 + self.dir.0 * self.movespeed;
+    
+        // Calculate all four hitbox corners for the new X position
+        let hitbox_corner_1_x = (new_pos_x + self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_2_x = (new_pos_x - self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_3_x = (new_pos_x + self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+        let hitbox_corner_4_x = (new_pos_x - self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new X position
+        if map[hitbox_corner_1_x.0 as usize][hitbox_corner_1_x.1 as usize] == 0 && 
+           map[hitbox_corner_2_x.0 as usize][hitbox_corner_2_x.1 as usize] == 0 &&
+           map[hitbox_corner_3_x.0 as usize][hitbox_corner_3_x.1 as usize] == 0 &&
+           map[hitbox_corner_4_x.0 as usize][hitbox_corner_4_x.1 as usize] == 0 {
+            // If no collisions are detected, update the player's X position
+            self.pos.0 = new_pos_x;
+        }
+    
+        // Calculate all four hitbox corners for the new Y position
+        let hitbox_corner_1_y = (self.pos.0 + self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_2_y = (self.pos.0 - self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_3_y = (self.pos.0 + self.hitbox_radius, new_pos_y - self.hitbox_radius);
+        let hitbox_corner_4_y = (self.pos.0 - self.hitbox_radius, new_pos_y - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new Y position
+        if map[hitbox_corner_1_y.0 as usize][hitbox_corner_1_y.1 as usize] == 0 && 
+           map[hitbox_corner_2_y.0 as usize][hitbox_corner_2_y.1 as usize] == 0 &&
+           map[hitbox_corner_3_y.0 as usize][hitbox_corner_3_y.1 as usize] == 0 &&
+           map[hitbox_corner_4_y.0 as usize][hitbox_corner_4_y.1 as usize] == 0 {
+            // If no collisions are detected, update the player's Y position
+            self.pos.1 = new_pos_y;
+        }
     }
     pub fn walk_right(&mut self, map: &Vec<Vec<usize>>) {
-        if map[(self.pos.0 + self.plane.0 * self.movespeed) as usize][(self.pos.1) as usize] == 0 {self.pos.0 += self.plane.0 * self.movespeed};
-        if map[(self.pos.0) as usize][(self.pos.1 + self.plane.1 * self.movespeed) as usize] == 0 {self.pos.1 += self.plane.1 * self.movespeed};
+        let new_pos_x = self.pos.0 + self.dir.1 * self.movespeed;
+        let new_pos_y = self.pos.1 - self.dir.0 * self.movespeed;
+    
+        // Calculate all four hitbox corners for the new X position
+        let hitbox_corner_1_x = (new_pos_x + self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_2_x = (new_pos_x - self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_3_x = (new_pos_x + self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+        let hitbox_corner_4_x = (new_pos_x - self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new X position
+        if map[hitbox_corner_1_x.0 as usize][hitbox_corner_1_x.1 as usize] == 0 && 
+           map[hitbox_corner_2_x.0 as usize][hitbox_corner_2_x.1 as usize] == 0 &&
+           map[hitbox_corner_3_x.0 as usize][hitbox_corner_3_x.1 as usize] == 0 &&
+           map[hitbox_corner_4_x.0 as usize][hitbox_corner_4_x.1 as usize] == 0 {
+            // If no collisions are detected, update the player's X position
+            self.pos.0 = new_pos_x;
+        }
+    
+        // Calculate all four hitbox corners for the new Y position
+        let hitbox_corner_1_y = (self.pos.0 + self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_2_y = (self.pos.0 - self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_3_y = (self.pos.0 + self.hitbox_radius, new_pos_y - self.hitbox_radius);
+        let hitbox_corner_4_y = (self.pos.0 - self.hitbox_radius, new_pos_y - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new Y position
+        if map[hitbox_corner_1_y.0 as usize][hitbox_corner_1_y.1 as usize] == 0 && 
+           map[hitbox_corner_2_y.0 as usize][hitbox_corner_2_y.1 as usize] == 0 &&
+           map[hitbox_corner_3_y.0 as usize][hitbox_corner_3_y.1 as usize] == 0 &&
+           map[hitbox_corner_4_y.0 as usize][hitbox_corner_4_y.1 as usize] == 0 {
+            // If no collisions are detected, update the player's Y position
+            self.pos.1 = new_pos_y;
+        }
+    }
+    pub fn walk_backward(&mut self, map: &Vec<Vec<usize>>) {
+        let new_pos_x = self.pos.0 - self.dir.0 * self.movespeed;
+        let new_pos_y = self.pos.1 - self.dir.1 * self.movespeed;
+    
+        // Calculate all four hitbox corners for the new X position
+        let hitbox_corner_1_x = (new_pos_x + self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_2_x = (new_pos_x - self.hitbox_radius, self.pos.1 + self.hitbox_radius);
+        let hitbox_corner_3_x = (new_pos_x + self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+        let hitbox_corner_4_x = (new_pos_x - self.hitbox_radius, self.pos.1 - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new X position
+        if map[hitbox_corner_1_x.0 as usize][hitbox_corner_1_x.1 as usize] == 0 && 
+           map[hitbox_corner_2_x.0 as usize][hitbox_corner_2_x.1 as usize] == 0 &&
+           map[hitbox_corner_3_x.0 as usize][hitbox_corner_3_x.1 as usize] == 0 &&
+           map[hitbox_corner_4_x.0 as usize][hitbox_corner_4_x.1 as usize] == 0 {
+            // If no collisions are detected, update the player's X position
+            self.pos.0 = new_pos_x;
+        }
+    
+        // Calculate all four hitbox corners for the new Y position
+        let hitbox_corner_1_y = (self.pos.0 + self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_2_y = (self.pos.0 - self.hitbox_radius, new_pos_y + self.hitbox_radius);
+        let hitbox_corner_3_y = (self.pos.0 + self.hitbox_radius, new_pos_y - self.hitbox_radius);
+        let hitbox_corner_4_y = (self.pos.0 - self.hitbox_radius, new_pos_y - self.hitbox_radius);
+    
+        // Check for collisions at all hitbox corners for the new Y position
+        if map[hitbox_corner_1_y.0 as usize][hitbox_corner_1_y.1 as usize] == 0 && 
+           map[hitbox_corner_2_y.0 as usize][hitbox_corner_2_y.1 as usize] == 0 &&
+           map[hitbox_corner_3_y.0 as usize][hitbox_corner_3_y.1 as usize] == 0 &&
+           map[hitbox_corner_4_y.0 as usize][hitbox_corner_4_y.1 as usize] == 0 {
+            // If no collisions are detected, update the player's Y position
+            self.pos.1 = new_pos_y;
+        }
     }
     
     
