@@ -12,12 +12,15 @@ const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.pn
 
 // const PILLAR_BYTES: &'static [u8] = include_bytes!("../assets/textures/pillar.png");
 pub const GAME_MAIN_FONT: &[u8] = include_bytes!("../assets/fonts/hud.otf") as &[u8];
+
+
 use fontdue::Font;
 use image::{Pixel, GenericImageView};
 pub struct Assets {
     pub textures: Vec<Vec<u32>>,
     pub two_dim_textures: Vec<Vec<Vec<u32>>>,
-    pub fonts: Vec<Font>
+    pub fonts: Vec<Font>,
+    pub sounds: [&'static [u8]; 1]
 }
 impl Assets {
     pub fn new() -> Self {
@@ -119,7 +122,7 @@ impl Assets {
         textures[10] = buffer.clone();
     }
     // Two Dimensional Textures:
-    let mut two_dim_textures: Vec<Vec<Vec<u32>>>= vec![vec![vec![0; TEX_WIDTH as usize]; TEX_HEIGHT as usize]; 20];
+    let two_dim_textures: Vec<Vec<Vec<u32>>>= vec![vec![vec![0; TEX_WIDTH as usize]; TEX_HEIGHT as usize]; 20];
     {
 
     }
@@ -128,7 +131,8 @@ impl Assets {
     Self {
         textures,
         two_dim_textures,
-        fonts
+        fonts,
+        sounds: [include_bytes!("../assets/sounds/footsteps_concrete.mp3")],
     }
     }
 }

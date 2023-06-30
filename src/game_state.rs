@@ -1,12 +1,17 @@
 use std::time::Instant;
 
 use crate::assets::Assets;
+use rodio::{OutputStreamHandle, source::Source, SpatialSink};
+use std::io::Cursor;
 
 #[derive(Copy, Clone)]
 pub struct PlayerStates {
     pub is_crouching: bool,
     pub is_crouched: bool,
     pub is_jumping: bool,
+    pub is_walking: bool,
+    pub is_steps_playing: bool,
+    pub was_player_walking: bool,
 }
 #[derive(Copy, Clone)]
 pub struct PlayerTimings {
@@ -38,7 +43,10 @@ impl Player {
             states: PlayerStates {
                  is_crouching: false,
                  is_crouched: false,
-                 is_jumping: false
+                 is_jumping: false,
+                 is_walking: false,
+                 is_steps_playing: false,
+                 was_player_walking: false,
                 },
             timings: PlayerTimings {
                 last_updated: std::time::Instant::now(),
@@ -273,7 +281,7 @@ impl Player {
 pub struct GameState {
     pub player: Player,
     pub map: Vec<Vec<usize>>,
-    pub assets: Assets
+    pub assets: Assets,
 }
 
 impl GameState {
@@ -309,4 +317,14 @@ impl GameState {
             assets: Assets::new()
         }
     }
+    pub fn create_footsteps(&mut self, handle: &OutputStreamHandle) -> SpatialSink {
+        let footsteps_audio_bytes = self.assets.sounds[0];
+        let cursor = Cursor::new(footsteps_audio_bytes);
+        let source = rodio::Decoder::new_mp3(cursor).unwrap();
+    
+        let sink = SpatialSink::try_new(handle, [0., 0., 0.], [-1., 0., 0.], [1., 0., 0.]).unwrap();
+        sink.append(source.convert_samples::<i16>());
+        sink
+    }
+    
 }

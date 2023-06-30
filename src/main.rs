@@ -17,6 +17,7 @@ mod game_state;
 mod util;
 use game_state::GameState;
 use render::{wall_buffer, ceiling_buffer, sprite_buffer, create_final_buffer};
+use rodio::OutputStream;
 
 use crate::{assets::{NUM_SPRITES, SPRITE, TEX_WIDTH, TEX_HEIGHT}, util::{rescale_buffer, render_text_to_buffer, game_setup}};
 fn main() {
@@ -92,6 +93,9 @@ fn main() {
     #[allow(unused_assignments)]
     let mut pressed_keys = HashSet::new();
     let mut frames_per_second = String::new();
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+    let mut footsteps_audio = game_state.create_footsteps(&stream_handle);
+    let mut footsteps_cycle = false;
     #[cfg(feature = "debug")]
     scope!("Main Loop");
     event_loop.run(move |event, _, control_flow| {
@@ -105,6 +109,21 @@ fn main() {
             game_state.player.movespeed = (frame_time_ms as f64 / 1000.0) * 3.5; 
         } else {
             game_state.player.movespeed = (frame_time_ms as f64 / 1000.0) * 2.0;
+        }
+        if game_state.player.states.is_walking && !game_state.player.states.was_player_walking && footsteps_audio.empty() {
+            footsteps_cycle = if footsteps_cycle == false {true} else {false};
+            if footsteps_cycle {
+                footsteps_audio = game_state.create_footsteps(&stream_handle);
+                footsteps_audio.set_emitter_position([0.3, 0., 0.]);
+            } else {
+                footsteps_audio = game_state.create_footsteps(&stream_handle);
+                footsteps_audio.set_emitter_position([-0.3, 0., 0.]);
+            }
+        
+        }else if !game_state.player.states.is_walking && game_state.player.states.was_player_walking && !footsteps_audio.empty(){
+
+        } else if !game_state.player.states.is_walking && game_state.player.states.was_player_walking && footsteps_audio.empty() {
+            footsteps_audio.stop();
         }
           
         match event {
@@ -152,7 +171,6 @@ fn main() {
                     
 
 
-
                     let final_buffer = create_final_buffer(wall_buffer, ceiling_floor_buffer, sprite_buffer);
                     #[cfg(feature = "debug")]
                     profiling::scope!("Draw Frame");
@@ -187,6 +205,7 @@ fn main() {
             }
             Event::MainEventsCleared {} =>{
                 window.request_redraw();
+                game_state.player.states.is_walking = false;
             },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -241,16 +260,20 @@ fn main() {
         for keycode in pressed_keys.clone() {
                 match keycode {
                     VirtualKeyCode::W => {
-                        game_state.player.walk_forward(&game_state.map)
+                        game_state.player.walk_forward(&game_state.map);
+                        game_state.player.states.is_walking = true;
                     },
                     VirtualKeyCode::A => {
-                        game_state.player.walk_left(&game_state.map)
+                        game_state.player.walk_left(&game_state.map);
+                        game_state.player.states.is_walking = true;
                     },
                     VirtualKeyCode::S => {
-                        game_state.player.walk_backward(&game_state.map)
+                        game_state.player.walk_backward(&game_state.map);
+                        game_state.player.states.is_walking = true;
                     },
                     VirtualKeyCode::D => {
-                        game_state.player.walk_right(&game_state.map)
+                        game_state.player.walk_right(&game_state.map);
+                        game_state.player.states.is_walking = true;
                     },
                     VirtualKeyCode::LControl => {
                         game_state.player.crouch()
