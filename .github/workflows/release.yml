@@ -15,7 +15,7 @@ jobs:
         target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
     steps:
       - name: Install alsa
-        run: sudo apt-get install libasound2-dev
+        run: sudo apt install librust-alsa-sys-dev libasound2-dev
 
       - uses: actions/checkout@master
       - name: Compile and release
