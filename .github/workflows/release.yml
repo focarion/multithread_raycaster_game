@@ -17,7 +17,7 @@ jobs:
       - name: Update index
         run: sudo apt update
       - name: Install alsa
-        run: sudo apt install librust-alsa-sys-dev libasound2-dev pkg-config
+        run: sudo apt install librust-alsa-sys-dev libasound2-dev pkg-config libudev-dev
         
       - uses: actions/checkout@master
       - name: Compile and release
