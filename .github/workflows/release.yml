@@ -6,35 +6,48 @@ on:
 
 jobs:
   release:
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        target: [x86_64-unknown-linux-musl, x86_64-pc-windows-gnu]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@master
 
-      - name: Set up dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt update
-          sudo apt install -y libasound2-dev pkg-config libudev-dev
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+      - name: Build Docker image
+        run: docker build -t multithread_raycaster_game .
 
-      - name: Build (Ubuntu)
-        if: runner.os == 'Linux'
-        run: cargo build --release --target=${{ matrix.target }}
+      - name: Run Docker container
+        run: docker run --name multithread_raycaster_game multithread_raycaster_game
 
-      - name: Build (Windows)
+      - name: Copy binary from Docker container
+        if: runner.os == 'Linux'
+        run: docker cp multithread_raycaster_game:/usr/src/multithread_raycaster_game/target/release/multithread_raycaster_game .
+
+      - name: Copy binary from Docker container (Windows)
         if: runner.os == 'Windows'
-        run: cargo build --release --target=${{ matrix.target }}
+        run: docker cp multithread_raycaster_game:/usr/src/multithread_raycaster_game/target/release/multithread_raycaster_game.exe .
 
-      - name: Upload Release Asset
+      - name: Upload Release Asset (Linux)
+        if: runner.os == 'Linux'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ github.event.release.upload_url }} 
-          asset_path: ./target/${{ matrix.target }}/release/myapp
-          asset_name: myapp-${{ matrix.target }}
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./multithread_raycaster_game
+          asset_name: multithread_raycaster_game
+          asset_content_type: application/octet-stream
+
+      - name: Upload Release Asset (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./multithread_raycaster_game.exe
+          asset_name: multithread_raycaster_game.exe
           asset_content_type: application/octet-stream
