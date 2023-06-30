@@ -19,6 +19,9 @@ jobs:
       - name: Install alsa
         run: sudo apt install librust-alsa-sys-dev libasound2-dev pkg-config libudev-dev
         
+      - name: Set PKG_CONFIG_PATH
+        run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+        
       - uses: actions/checkout@master
       - name: Compile and release
       
