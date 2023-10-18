@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::num::IntErrorKind;
 use std::thread::available_parallelism;
 use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
-use rayon::prelude::*;
+// use rayon::prelude::*;
 pub fn render_text_to_buffer(
     r: u32,
     g: u32,
@@ -52,7 +52,7 @@ pub fn render_text_to_buffer(
         x += metrics.advance_width;
     }
 }
-pub fn rescale_buffer(
+/* pub fn rescale_buffer(
     src_buffer: &Vec<Vec<u32>>,
     src_width: usize,
     src_height: usize,
@@ -104,7 +104,7 @@ pub fn rescale_buffer(
 
 
     dst_buffer
-}
+} */
 pub fn game_setup(
     monitor_width: u32,
     monitor_height: u32
