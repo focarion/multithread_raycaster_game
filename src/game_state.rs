@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use winit::event::VirtualKeyCode;
+use winit::keyboard::{Key, NamedKey};
 
 use crate::{assets::{Assets, Linedef}, render::BSPTree};
 /* use rodio::{OutputStreamHandle, source::Source, SpatialSink}; */
@@ -68,15 +68,15 @@ impl Player {
         }
     }
     // handle_key: Handles key press events and updates player state
-    pub fn handle_key(&mut self, keycode: VirtualKeyCode, delta_time: f64, bsp_tree: &BSPTree) {
+    pub fn handle_key(&mut self, keycode: Key, delta_time: f64, bsp_tree: &BSPTree) {
         self.move_dir = (self.dir.0, self.dir.1);  // Reset move_dir to dir before handling keys
-        match keycode {
-            VirtualKeyCode::W => self.walk_in_direction(self.move_dir, delta_time, bsp_tree),
-            VirtualKeyCode::A => self.walk_in_direction((-self.move_dir.1, self.move_dir.0), delta_time, bsp_tree),
-            VirtualKeyCode::S => self.walk_in_direction((-self.move_dir.0, -self.move_dir.1), delta_time, bsp_tree),
-            VirtualKeyCode::D => self.walk_in_direction((self.move_dir.1, -self.move_dir.0), delta_time, bsp_tree),
-            VirtualKeyCode::LControl => self.crouch(),
-            VirtualKeyCode::Space => self.jump(),
+        match keycode.as_ref() {
+            Key::Character("w") => self.walk_in_direction(self.move_dir, delta_time, bsp_tree),
+            Key::Character("a") => self.walk_in_direction((-self.move_dir.1, self.move_dir.0), delta_time, bsp_tree),
+            Key::Character("s") => self.walk_in_direction((-self.move_dir.0, -self.move_dir.1), delta_time, bsp_tree),
+            Key::Character("d") => self.walk_in_direction((self.move_dir.1, -self.move_dir.0), delta_time, bsp_tree),
+            Key::Named(NamedKey::Control) => self.crouch(),
+            Key::Named(NamedKey::Space) => self.jump(),
             _ => {}
         }
     }
