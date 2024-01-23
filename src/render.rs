@@ -86,21 +86,9 @@ impl BSPTree {
     }    
     pub fn check_collision(&self, pos: (f64, f64, f64), radius: f64) -> bool {
         match self {
-            BSPTree::Node { splitter, front, back } => {
-                let distance = splitter.distance_to_point(pos);
-                
-                if distance.abs() < radius {
-                    if pos.2 < splitter.height && splitter.is_within_boundaries(pos) {
-                        return true;
-                    }
-                    return front.check_collision(pos, radius) || back.check_collision(pos, radius);
-                }
-                
-                if distance > 0.0 {
-                    front.check_collision(pos, radius)
-                } else {
-                    back.check_collision(pos, radius)
-                }
+            BSPTree::Node { front, back, .. } => {
+                // Directly delegate to child nodes without additional checks
+                front.check_collision(pos, radius) || back.check_collision(pos, radius)
             },
             BSPTree::Leaf(linedefs) => {
                 for linedef in linedefs {

@@ -106,6 +106,7 @@ pub struct Linedef {
     pub height: f64,
     pub floor_level: f64,
     pub texture: TextureId,
+    pub wrap_texture: bool,
 }
 
 impl Linedef {
