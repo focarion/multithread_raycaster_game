@@ -140,7 +140,7 @@ impl Player {
     
         for linedef in linedefs.iter() {
             if self.pos.0 >= linedef.start.x && self.pos.0 <= linedef.end.x && self.pos.1 >= linedef.start.y && self.pos.1 <= linedef.end.y {
-                closest_floor_level = linedef.floor_level.max(closest_floor_level);
+                closest_floor_level = linedef.floor_height.max(closest_floor_level);
             }
         }
     

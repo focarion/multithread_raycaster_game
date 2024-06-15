@@ -104,8 +104,11 @@ pub struct Linedef {
     pub start: Vertex,
     pub end: Vertex,
     pub height: f64,
-    pub floor_level: f64,
+    pub floor_height: f64,
+    pub ceiling_height: f64,
     pub texture: TextureId,
+    pub ceiling_texture: TextureId,
+    pub floor_texture: TextureId,
     pub wrap_texture: bool,
 }
 

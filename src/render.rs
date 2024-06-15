@@ -48,7 +48,7 @@ impl BSPTree {
             BSPTree::Leaf(linedefs) => {
                 for x in 0..screen_width {
                     for linedef in linedefs {
-                        if let Some((draw_start, draw_end, perp_wall_dist, intersection_x)) = Renderer::ray_wall_intersection(player, linedef, x, screen_width, screen_height) {
+                        if let Some((draw_start, draw_end, ceiling_draw_start, ceiling_draw_end, floor_draw_start, floor_draw_end, perp_wall_dist, intersection_x, intersection_y)) = Renderer::ray_wall_intersection(player, linedef, x, screen_width, screen_height) {
                             let wall_length = ((linedef.end.x - linedef.start.x).powi(2) + (linedef.end.y - linedef.start.y).powi(2)).sqrt();
                             let texture = &assets.textures[linedef.texture as usize];
 
@@ -125,93 +125,102 @@ impl Renderer {
         self.buffer.fill(0);
         bsp_tree.traverse_and_render_polygons(player, &mut self.buffer, &mut self.zbuffer, screen_width, screen_height, assets);
     }
-    fn ray_wall_intersection(player: &Player, linedef: &Linedef, x: usize, screen_width: usize, screen_height: usize) -> Option<(f64, f64, f64, f64)> {
-        let is_vertical_wall = linedef.start.x == linedef.end.x;
-        if is_vertical_wall {
-            let camera_x = 2.0 * x as f64 / screen_width as f64 - 1.0;
-            let ray_dir = (
-                player.dir.0 + player.plane.0 * camera_x,
-                player.dir.1 + player.plane.1 * camera_x,
-            );
-        
-            if ray_dir.0.abs() < 1e-10 {
-                return None;
-            }
-
-            let perp_wall_dist = (linedef.start.x - player.pos.0) / ray_dir.0;
-
-            if perp_wall_dist < 0.0 {
-                return None;
-            }
-            
-            let intersection_y = player.pos.1 + perp_wall_dist * ray_dir.1;
-            
-            if intersection_y < linedef.start.y.min(linedef.end.y) || intersection_y > linedef.start.y.max(linedef.end.y) {
-                return None;
-            }
-                
-            let base_wall_height = (screen_width as f64 / perp_wall_dist).abs();
-            let wall_height = base_wall_height * linedef.height;
-            
-            let effective_floor_level = linedef.floor_level - player.pos.2;
-            let height_diff_scaled = ((player.height - effective_floor_level) / perp_wall_dist) * screen_width as f64;
-        
-            let draw_base = height_diff_scaled;
-            let mut draw_end = draw_base;
-            let mut draw_start = draw_base - wall_height;
-        
-            draw_start += player.screen_pitch;
-            draw_end += player.screen_pitch;
-    
-            if draw_end < 0.0 || draw_start > screen_height as f64 {
-                return None;
-            }
-            return Some((draw_start, draw_end, perp_wall_dist, intersection_y));
-        }
-
+    fn ray_wall_intersection(player: &Player, linedef: &Linedef, x: usize, screen_width: usize, screen_height: usize) -> Option<(f64, f64, f64, f64, f64, f64, f64, f64, f64)> {
+        // Compute camera_x and ray_dir as common operations for both vertical and non-vertical walls
         let camera_x = 2.0 * x as f64 / screen_width as f64 - 1.0;
         let ray_dir = (
             player.dir.0 + player.plane.0 * camera_x,
             player.dir.1 + player.plane.1 * camera_x,
         );
     
-        let delta_x = linedef.end.x - linedef.start.x;
-        let delta_y = linedef.end.y - linedef.start.y;
+        let (perp_wall_dist, intersection_x, intersection_y): (f64, f64, f64);
     
-        let det = -ray_dir.1 * delta_x + ray_dir.0 * delta_y;
+        if linedef.start.x == linedef.end.x {
+            // Handle vertical walls aligned with the x-axis
+            if ray_dir.0.abs() < 1e-10 {
+                return None;
+            }
+            perp_wall_dist = (linedef.start.x - player.pos.0) / ray_dir.0;
+            if perp_wall_dist < 0.0 {
+                return None;
+            }
+            intersection_y = player.pos.1 + perp_wall_dist * ray_dir.1;
+            if intersection_y < linedef.start.y.min(linedef.end.y) || intersection_y > linedef.start.y.max(linedef.end.y) {
+                return None;
+            }
+            intersection_x = linedef.start.x;
+        } else if linedef.start.y == linedef.end.y {
+            // Handle vertical walls aligned with the y-axis
+            if ray_dir.1.abs() < 1e-10 {
+                return None;
+            }
+            perp_wall_dist = (linedef.start.y - player.pos.1) / ray_dir.1;
+            if perp_wall_dist < 0.0 {
+                return None;
+            }
+            intersection_x = player.pos.0 + perp_wall_dist * ray_dir.0;
+            if intersection_x < linedef.start.x.min(linedef.end.x) || intersection_x > linedef.start.x.max(linedef.end.x) {
+                return None;
+            }
+            intersection_y = linedef.start.y;
+        } else {
+            // Non-vertical wall case
+            let delta_x = linedef.end.x - linedef.start.x;
+            let delta_y = linedef.end.y - linedef.start.y;
     
-        if det.abs() < 1e-10 {
-            return None;
-        }
-    
-        let t = (delta_x * (player.pos.1 - linedef.start.y) - delta_y * (player.pos.0 - linedef.start.x)) / det;
-        let u = (-ray_dir.1 * (player.pos.0 - linedef.start.x) + ray_dir.0 * (player.pos.1 - linedef.start.y)) / det;
-    
-        if t >= 0.0 && u >= 0.0 && u <= 1.0 {
-            let perp_wall_dist = t;
-    
-            let base_wall_height = (screen_width as f64 / perp_wall_dist).abs();
-            let wall_height = base_wall_height * linedef.height;
-        
-            let intersection_x = linedef.start.x + u * delta_x;
-
-            let effective_floor_level = linedef.floor_level - player.pos.2;
-            let height_diff_scaled = ((player.height - effective_floor_level) / perp_wall_dist) * screen_width as f64;
-        
-            let draw_base = height_diff_scaled;
-            let mut draw_end = draw_base;
-            let mut draw_start = draw_base - wall_height;
-        
-            draw_start += player.screen_pitch;
-            draw_end += player.screen_pitch;
-    
-            if draw_end < 0.0 || draw_start > screen_height as f64 {
+            let det = -ray_dir.1 * delta_x + ray_dir.0 * delta_y;
+            if det.abs() < 1e-10 {
                 return None;
             }
     
-            Some((draw_start, draw_end, perp_wall_dist, intersection_x))
-        } else {
-            None
+            let t = (delta_x * (player.pos.1 - linedef.start.y) - delta_y * (player.pos.0 - linedef.start.x)) / det;
+            let u = (-ray_dir.1 * (player.pos.0 - linedef.start.x) + ray_dir.0 * (player.pos.1 - linedef.start.y)) / det;
+    
+            if t < 0.0 || u < 0.0 || u > 1.0 {
+                return None;
+            }
+    
+            perp_wall_dist = t;
+            intersection_x = linedef.start.x + u * delta_x;
+            intersection_y = linedef.start.y + u * delta_y;
         }
+    
+        // Calculate wall height
+        let base_wall_height = (screen_width as f64 / perp_wall_dist).abs();
+        let wall_height = base_wall_height * linedef.height;
+    
+        // Calculate drawing start and end positions for the wall
+        let effective_floor_level = linedef.floor_height - player.pos.2;
+        let height_diff_scaled = ((player.height - effective_floor_level) / perp_wall_dist) * screen_width as f64;
+    
+        let draw_base = height_diff_scaled;
+        let mut draw_start = draw_base - wall_height + player.screen_pitch;
+        let mut draw_end = draw_base + player.screen_pitch;
+    
+        if draw_end < 0.0 || draw_start > screen_height as f64 {
+            return None;
+        }
+    
+        // Adjust draw_start and draw_end for the ceiling and floor
+        let ceiling_height_diff_scaled = ((player.height - linedef.ceiling_height) / perp_wall_dist) * screen_width as f64;
+        let mut ceiling_draw_start = ceiling_height_diff_scaled + player.screen_pitch;
+        let mut ceiling_draw_end = ceiling_draw_start - wall_height;
+    
+        if ceiling_draw_end < 0.0 || ceiling_draw_start > screen_height as f64 {
+            ceiling_draw_start = screen_height as f64;
+            ceiling_draw_end = screen_height as f64;
+        }
+    
+        let floor_height_diff_scaled = ((player.height - linedef.floor_height) / perp_wall_dist) * screen_width as f64;
+        let mut floor_draw_start = floor_height_diff_scaled + player.screen_pitch;
+        let mut floor_draw_end = floor_draw_start + wall_height;
+    
+        if floor_draw_end < 0.0 || floor_draw_start > screen_height as f64 {
+            floor_draw_start = screen_height as f64;
+            floor_draw_end = screen_height as f64;
+        }
+    
+        Some((draw_start, draw_end, ceiling_draw_start, ceiling_draw_end, floor_draw_start, floor_draw_end, perp_wall_dist, intersection_x, intersection_y))
     }
+    
 }
