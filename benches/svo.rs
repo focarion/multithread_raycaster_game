@@ -60,16 +60,15 @@ impl OctreeNode {
     }
 
     fn insert(&mut self, depth: usize, x: usize, y: usize, z: usize, voxel: Voxel) {
-        if depth == MAX_DEPTH {
-            self.voxel = Some(voxel);
+        if depth >= MAX_DEPTH {
             return;
         }
-        
+
         let shift = MAX_DEPTH - depth - 1;
         let index = ((x >> shift) & 1) << 2 |
                     ((y >> shift) & 1) << 1 |
                     ((z >> shift) & 1);
-    
+
         let child = self.children[index].get_or_insert_with(|| {
             self.bitmask |= 1 << index;
             Box::new(OctreeNode::new())
@@ -77,16 +76,21 @@ impl OctreeNode {
         child.insert(depth + 1, x, y, z, voxel);
     }
     
-    fn oc_dfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize)) {
-        let mut stack = vec![(self, 0)]; // Stack of nodes and their depths
+    fn oc_dfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize, usize, usize, usize)) {
+        let mut stack = vec![(self, 0, 0, 0, 0)]; // Node, depth, x, y, z
 
-        while let Some((node, depth)) = stack.pop() {
-            visit(node, depth);
+        while let Some((node, depth, x, y, z)) = stack.pop() {
+            visit(node, depth, x, y, z);
 
-            // Push children onto the stack in reverse order
-            for i in (0..8).rev() {
-                if let Some(ref child) = node.children[i] {
-                    stack.push((child, depth + 1));
+            if depth < MAX_DEPTH {
+                let shift = MAX_DEPTH - depth - 1;
+                for i in (0..8).rev() {
+                    if let Some(ref child) = node.children[i] {
+                        let child_x = x | (((i & 4) >> 2) << shift);
+                        let child_y = y | (((i & 2) >> 1) << shift);
+                        let child_z = z | ((i & 1) << shift);
+                        stack.push((child, depth + 1, child_x, child_y, child_z));
+                    }
                 }
             }
         }
@@ -134,9 +138,10 @@ impl SparseVoxelOctree {
     pub fn remove(&mut self, x: usize, y: usize, z: usize) {
         self.spatial_hash_table.remove(x, y, z);
     }
-    pub fn dfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize)) {
+    pub fn dfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize, usize, usize, usize)) {
         self.root.oc_dfs(visit);
     }
+
     pub fn bfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize)) {
         self.root.oc_bfs(visit);
     }
@@ -153,14 +158,14 @@ fn bench_svo(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("Insert", i), i, |b, i| {
             b.iter(|| {black_box(svo.insert(5, i + i, i + (i * i) , Voxel { color: 0xFF0000 }))})
         });
-        group.bench_with_input(BenchmarkId::new("DFS", i), i, |b, _i| {
-            b.iter(|| {black_box(svo.dfs(&mut |node, _depth| {
+        group.bench_function(BenchmarkId::new("DFS", i), |b| {
+            b.iter(|| {black_box(svo.dfs(&mut |node, _depth, base_x, base_y, base_z| {
                 if let Some(_voxel) = &node.voxel {
                 }
             }
         ))})
         });
-        group.bench_with_input(BenchmarkId::new("BFS", i), i, |b, _i| {
+        group.bench_function(BenchmarkId::new("BFS", i),|b| {
             b.iter(|| {black_box(svo.bfs(&mut |node, _depth| {
                 if let Some(_voxel) = &node.voxel {
                 }

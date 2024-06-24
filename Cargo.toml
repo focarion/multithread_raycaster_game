@@ -3,6 +3,23 @@ name = "multithread_raycaster_game"
 version = "0.3.0"
 edition = "2021"
 
+[profile.dev]
+opt-level = 2 # Use better optimizations.
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = 'unwind'
+incremental = false
+codegen-units = 1
+
 [dependencies]
 winit = "0.30"
 softbuffer = "0.4"
@@ -14,6 +31,10 @@ mint = {version= "0.5"}
 rayon = {version = "1.10"}
 ahash = {version = "0.8"}
 parking_lot = "0.12"
+crossbeam = "0.8"
+dot_vox = "5.1"
+puffin = "0.19"
+puffin_http = "0.16"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 codspeed-criterion-compat = {version = "2.6", features = ["html_reports"]}

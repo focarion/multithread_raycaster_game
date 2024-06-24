@@ -1,5 +1,5 @@
 use std::time::Instant;
-
+use dot_vox::{DotVoxData, load};
 use glam::Vec3A;
 
 #[derive(Copy, Clone)]
@@ -48,13 +48,25 @@ impl Player {
         }
     }
 }
+pub struct Assets {
+    pub voxels: Vec<DotVoxData>
+}
+impl Assets {
+    pub fn new() -> Self {
+        Self {
+            voxels: vec![load("assets/template.vox").unwrap()]
+        }
+    }
+}
 pub struct State {
     pub player: Player,
+    pub assets: Assets,
 }
 impl State {
     pub fn new() -> Self {
         Self {
             player: Player::new(),
+            assets: Assets::new()
         }
     }
 }
