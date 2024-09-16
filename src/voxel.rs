@@ -1,14 +1,13 @@
-use std::collections::VecDeque;
 use ahash::AHashMap;
+use std::collections::VecDeque;
 pub const MAX_DEPTH: usize = 16;
 fn hash_function(x: usize, y: usize, z: usize) -> usize {
     const PRIME1: usize = 73856093;
     const PRIME2: usize = 19349663;
     const PRIME3: usize = 83492791;
 
-    ((x).wrapping_mul(PRIME1) ^ 
-     (y).wrapping_mul(PRIME2) ^ 
-     (z).wrapping_mul(PRIME3)) & 0xFFFFFFFFFFFF
+    ((x).wrapping_mul(PRIME1) ^ (y).wrapping_mul(PRIME2) ^ (z).wrapping_mul(PRIME3))
+        & 0xFFFFFFFFFFFF
 }
 
 #[derive(Clone, Debug)]
@@ -71,9 +70,7 @@ impl OctreeNode {
         }
 
         let shift = MAX_DEPTH - depth - 1;
-        let index = ((x >> shift) & 1) << 2 |
-                    ((y >> shift) & 1) << 1 |
-                    ((z >> shift) & 1);
+        let index = ((x >> shift) & 1) << 2 | ((y >> shift) & 1) << 1 | ((z >> shift) & 1);
 
         let child = self.children[index].get_or_insert_with(|| {
             self.bitmask |= 1 << index;
@@ -81,7 +78,7 @@ impl OctreeNode {
         });
         child.insert(depth + 1, x, y, z, voxel);
     }
-    
+
     fn oc_dfs(&self, visit: &mut dyn FnMut(&OctreeNode, usize, usize, usize, usize)) {
         let mut stack = vec![(self, 0, 0, 0, 0)]; // Node, depth, x, y, z
 
@@ -115,7 +112,6 @@ impl OctreeNode {
             }
         }
     }
-
 }
 
 #[derive(Clone, Debug)]

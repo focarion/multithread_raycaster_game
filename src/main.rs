@@ -1,10 +1,9 @@
-#![feature(portable_simd)]
 use render::Renderer;
 use softbuffer::Surface;
 
 use std::{collections::HashSet, num::NonZeroU32, rc::Rc, time::{Duration, Instant}};
 use winit::{
-    application::ApplicationHandler, dpi::PhysicalSize, event::{DeviceEvent, ElementState, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{Key, NamedKey}, window::{CursorGrabMode, Window, WindowAttributes, WindowId}
+    application::ApplicationHandler, dpi::LogicalSize, event::{DeviceEvent, ElementState, WindowEvent}, event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, keyboard::{Key, NamedKey}, window::{CursorGrabMode, Window, WindowAttributes, WindowId}
 };
 use state::State;
 use voxel::{SparseVoxelOctree, Voxel, VoxelColor};
@@ -29,35 +28,40 @@ struct App {
     threads: usize,
 }
 impl App {
-    
+
 }
 impl Default for App {
     fn default() -> Self {
-        Self { window: Default::default(), delta_time: 0.0, surface: Default::default(), frames: 0, last_fps_print_time: Instant::now(), mouse_lock: false, mouse_lock_setup: true, pressed_keys: HashSet::new(), frames_per_second: String::new(), last_frame_time: Instant::now(), state: State::new(), svo: SparseVoxelOctree::new(), renderer: Default::default(), threads: 3}
+        Self { window: Default::default(), delta_time: 0.0, surface: Default::default(), frames: 0, last_fps_print_time: Instant::now(), mouse_lock: false, mouse_lock_setup: true, pressed_keys: HashSet::new(), frames_per_second: String::new(), last_frame_time: Instant::now(), state: State::new(), svo: SparseVoxelOctree::new(), renderer: Default::default(), threads: 30}
     }
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let monitor_resolution = event_loop.primary_monitor().unwrap().size();
-        let (monitor_width, monitor_height) = (monitor_resolution.width, monitor_resolution.height);
+        let monitor = event_loop.available_monitors().next().unwrap();
+        let scale_factor = monitor.scale_factor();
+        let physical_size = monitor.size();
+        let logical_size: LogicalSize<u32> = physical_size.to_logical(scale_factor);
 
-        let display_size = PhysicalSize::new(monitor_width, monitor_height);
-        let atrributes = WindowAttributes::default()
+        println!("Physical size: {:?}", physical_size);
+        println!("Logical size: {:?}", logical_size);
+
+        let attributes = WindowAttributes::default()
             .with_title(format!("Multithread Raycaster Game Version: {}", clap::crate_version!()))
-            .with_inner_size(display_size)
+            .with_inner_size(logical_size) // Use logical size here
             .with_resizable(false);
-        self.window = Some(Rc::new(event_loop.create_window(atrributes).unwrap()));
-        let context = softbuffer::Context::new(<Option<Rc<Window>> as Clone>::clone(&self.window).unwrap().clone()).unwrap();
-         self.surface = Some(softbuffer::Surface::new(&context, <Option<Rc<Window>> as Clone>::clone(&self.window).unwrap().clone()).unwrap());
+
+        self.window = Some(Rc::new(event_loop.create_window(attributes).unwrap()));
+        let context = softbuffer::Context::new(Rc::clone(self.window.as_ref().unwrap())).unwrap();
+        self.surface = Some(softbuffer::Surface::new(&context, Rc::clone(self.window.as_ref().unwrap())).unwrap());
         self.surface.as_mut().unwrap()
-        .resize(
-            NonZeroU32::new(monitor_width).unwrap(),
-            NonZeroU32::new(monitor_height).unwrap(),
-        )
-        .unwrap();
-        
-        self.renderer = Some(Renderer::new(monitor_width as usize, monitor_height as usize, self.threads));
+            .resize(
+                NonZeroU32::new(physical_size.width).unwrap(),
+                NonZeroU32::new(physical_size.height).unwrap(),
+            )
+            .unwrap();
+
+        self.renderer = Some(Renderer::new(physical_size.width as usize, physical_size.height as usize));
 
         event_loop.set_control_flow(ControlFlow::Poll);
         self.svo.insert(10, 20, 30, Voxel { color: VoxelColor {r: 255, g: 0, b: 0, a: 255} });
@@ -90,7 +94,7 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             },
             WindowEvent::RedrawRequested => {
-                
+
                 let current_frame_time = std::time::Instant::now();
                 self.delta_time = (current_frame_time - self.last_frame_time).as_secs_f64().clone();
                 self.last_frame_time = current_frame_time;
@@ -110,15 +114,18 @@ impl ApplicationHandler for App {
                 }
                 if !self.mouse_lock {
                 }
+                puffin::profile_scope!("rendering start");
                 Renderer::render_voxels(self.renderer.as_mut().unwrap(), &self.svo, self.threads);
-
+                puffin::profile_scope!("rendering ended");
                 if let Ok(mut draw_buffer) = self.surface.as_mut().unwrap().buffer_mut() {
-                    // Flatten the 2D buffer efficiently
-                    for (i, row) in self.renderer.as_ref().unwrap().buffer.iter().enumerate() {
-                        draw_buffer[i * self.renderer.as_ref().unwrap().render_width..(i + 1) * self.renderer.as_ref().unwrap().render_width].copy_from_slice(row);
+                    puffin::profile_scope!("copy");
+                    {
+                    draw_buffer.copy_from_slice(&self.renderer.as_ref().unwrap().buffer);
                     }
+                    puffin::profile_scope!("present");
                     draw_buffer.present().unwrap();
                 }
+                puffin::profile_scope!("frame ended");
                 puffin::GlobalProfiler::lock().new_frame();
             },
             WindowEvent::KeyboardInput { event, .. } => {
@@ -142,7 +149,7 @@ impl ApplicationHandler for App {
                             }
                             _ => {}
                         }
-                            
+
                     },
                     _ => {}
 
@@ -155,10 +162,10 @@ impl ApplicationHandler for App {
                         self.pressed_keys.remove(&key);
                     }
                 }
-            }   
-                    
+            }
+
             _ => {}
-            
+
     }
 }
 }
@@ -167,7 +174,7 @@ fn main() {
     let mut app = App::default();
     let server_addr = format!("0.0.0.0:{}", puffin_http::DEFAULT_PORT);
     let _puffin_server = puffin_http::Server::new(&server_addr).unwrap();
-    eprintln!("Serving demo profile data on {server_addr}. Run `puffin_viewer` to view it.");
-    puffin::set_scopes_on(false);
+    eprintln!("Serving demo profile data on {server_addr}. Run puffin_viewer to view it.");
+    puffin::set_scopes_on(true);
     event_loop.run_app(&mut app).unwrap();
 }
